@@ -12,13 +12,19 @@ class Hlavas_Terms_Activator {
 	/**
 	 * Run activation tasks.
 	 *
+	 * @param string|null $from_version Previously installed version.
 	 * @return void
 	 */
-	public static function activate(): void {
+	public static function activate( ?string $from_version = null ): void {
+		$from_version = is_string( $from_version ) && '' !== $from_version ? $from_version : '0';
+
 		self::create_tables();
+		self::maybe_run_data_migrations( $from_version );
 		self::maybe_seed_qualification_types();
 		self::maybe_seed_terms();
 		self::update_db_version();
+		hlavas_terms_set_installed_version( HLAVAS_TERMS_VERSION );
+		hlavas_terms_ensure_log_storage();
 	}
 
 	/**
@@ -125,16 +131,16 @@ class Hlavas_Terms_Activator {
 		/** @var wpdb $wpdb */
 
 		$table = self::get_types_table_name();
-		$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-
-		if ( $count > 0 ) {
-			return;
-		}
-
 		$now  = current_time( 'mysql' );
 		$seed = self::get_seed_qualification_types();
 
 		foreach ( $seed as $index => $row ) {
+			$existing_id = self::find_existing_seed_type_id( $row );
+
+			if ( $existing_id > 0 ) {
+				continue;
+			}
+
 			$wpdb->insert(
 				$table,
 				array_merge(
@@ -162,6 +168,45 @@ class Hlavas_Terms_Activator {
 				]
 			);
 		}
+	}
+
+	/**
+	 * Find existing seeded qualification type by key or accreditation number.
+	 *
+	 * @param array<string, int|string> $row Seed row.
+	 * @return int
+	 */
+	private static function find_existing_seed_type_id( array $row ): int {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$table                = self::get_types_table_name();
+		$type_key             = (string) ( $row['type_key'] ?? '' );
+		$accreditation_number = (string) ( $row['accreditation_number'] ?? '' );
+
+		if ( '' !== $type_key ) {
+			$found = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT id FROM {$table} WHERE type_key = %s LIMIT 1",
+					$type_key
+				)
+			);
+
+			if ( $found > 0 ) {
+				return $found;
+			}
+		}
+
+		if ( '' !== $accreditation_number ) {
+			return (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT id FROM {$table} WHERE accreditation_number = %s LIMIT 1",
+					$accreditation_number
+				)
+			);
+		}
+
+		return 0;
 	}
 
 	/**
@@ -213,6 +258,36 @@ class Hlavas_Terms_Activator {
 				]
 			);
 		}
+	}
+
+	/**
+	 * Runs versioned data migrations without overwriting user-managed content.
+	 *
+	 * @param string $from_version Installed version before update.
+	 * @return void
+	 */
+	private static function maybe_run_data_migrations( string $from_version ): void {
+		if ( version_compare( $from_version, '1.1.2', '<=' ) ) {
+			self::normalize_empty_qualification_ids();
+		}
+	}
+
+	/**
+	 * Normalize empty qualification references to 0 for compatibility.
+	 *
+	 * @return void
+	 */
+	private static function normalize_empty_qualification_ids(): void {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$table = self::get_table_name();
+
+		$wpdb->query(
+			"UPDATE {$table}
+			SET qualification_type_id = 0
+			WHERE qualification_type_id IS NULL"
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 	}
 
 	/**

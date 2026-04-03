@@ -205,6 +205,18 @@
 .hlavas-settings-forms-table {
     table-layout: auto !important;
 }
+.hlavas-log-preview {
+    max-height: 420px;
+    overflow: auto;
+    padding: 14px 16px;
+    background: #111827;
+    color: #e5e7eb;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
 
 /* Sync page info */
 .hlavas-sync-info {

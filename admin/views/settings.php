@@ -7,11 +7,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 /** @var bool $debug_mode */
 /** @var string $sync_value_mode */
 /** @var string $report_email */
+/** @var string $activity_log_path */
 /** @var array<string, string> $plugin_info */
 /** @var array<int, object> $types */
 /** @var array<string, mixed> $settings_status */
 /** @var array<int, array<string, mixed>> $form_registry */
 /** @var array<string, string> $sync_log */
+/** @var array<int, string> $activity_log_lines */
 ?>
 <div class="wrap hlavas-terms-wrap">
 	<h1>Nastavení pluginu</h1>
@@ -30,6 +32,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<div class="notice notice-error is-dismissible"><p>Importovaný soubor není platná záloha pluginu.</p></div>
 	<?php elseif ( 'sync_log_reset' === $message ) : ?>
 		<div class="notice notice-success is-dismissible"><p>Datumy synchronizace byly vymazány.</p></div>
+	<?php elseif ( 'log_cleared' === $message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Textový log pluginu byl vymazán.</p></div>
+	<?php elseif ( 'log_missing' === $message ) : ?>
+		<div class="notice notice-error is-dismissible"><p>Log soubor zatím neexistuje nebo není čitelný.</p></div>
+	<?php elseif ( 'log_clear_failed' === $message ) : ?>
+		<div class="notice notice-error is-dismissible"><p>Log soubor se nepodařilo vymazat.</p></div>
 	<?php endif; ?>
 
 	<div class="hlavas-settings-grid">
@@ -197,6 +205,35 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-types' ) ); ?>">typech kurzů</a>.
 				</p>
 			</div>
+
+			<div class="hlavas-settings-section">
+				<h2>Aktivitní log pluginu</h2>
+				<p class="description">
+					Log zachycuje úpravy a důležité akce v pluginu, včetně toho kdo je provedl a kdy.
+					Ukládá se jako textový soubor do pluginu: <code><?php echo esc_html( $activity_log_path ); ?></code>
+				</p>
+
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-settings' ) ); ?>" class="hlavas-report-inline-form">
+					<?php wp_nonce_field( 'hlavas_terms_log_actions', '_hlavas_log_nonce' ); ?>
+					<button type="submit" name="hlavas_terms_download_log" value="1" class="button button-primary">Stáhnout TXT log</button>
+					<button
+						type="submit"
+						name="hlavas_terms_clear_log"
+						value="1"
+						class="button"
+						onclick="return confirm('Opravdu vymazat textový log pluginu?');"
+					>
+						Vymazat log
+					</button>
+				</form>
+
+				<?php if ( empty( $activity_log_lines ) ) : ?>
+					<p class="description">Log je zatím prázdný.</p>
+				<?php else : ?>
+					<pre class="hlavas-log-preview"><?php echo esc_html( implode( "\n", $activity_log_lines ) ); ?></pre>
+					<p class="description">Zobrazeno je posledních <?php echo esc_html( (string) count( $activity_log_lines ) ); ?> záznamů od nejnovějšího.</p>
+				<?php endif; ?>
+			</div>
 		</div>
 
 		<div class="hlavas-settings-side">
@@ -212,7 +249,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 						<button type="submit" name="hlavas_terms_reset_sync_log" value="1" class="button">Vymazat datumy synchronizace</button>
 					</p>
 					<p class="description">
-						Smaže interní log posledních synchronizací termínů do Fluent Forms. Nemění termíny ani formuláře samotné.
+						Smaže interní log posledních synchronizací termínů a formulářů do Fluent Forms. Nemění termíny ani formuláře samotné.
 					</p>
 				</form>
 			</div>
@@ -288,6 +325,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 						<tr>
 							<th>E-mail reportů</th>
 							<td><?php echo esc_html( $report_email ); ?></td>
+						</tr>
+						<tr>
+							<th>Log soubor</th>
+							<td><code><?php echo esc_html( $activity_log_path ); ?></code></td>
 						</tr>
 						<tr>
 							<th>Tabulka termínů</th>

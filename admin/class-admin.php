@@ -232,6 +232,20 @@ class Hlavas_Terms_Admin {
 		}
 
 		if (
+			isset( $_POST['hlavas_terms_download_log'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_log_nonce'] ?? '' ) ), 'hlavas_terms_log_actions' )
+		) {
+			$this->handle_log_download();
+		}
+
+		if (
+			isset( $_POST['hlavas_terms_clear_log'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_log_nonce'] ?? '' ) ), 'hlavas_terms_log_actions' )
+		) {
+			$this->handle_log_clear();
+		}
+
+		if (
 			isset( $_POST['hlavas_term_save'] ) &&
 			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_nonce'] ?? '' ) ), 'hlavas_term_save' )
 		) {
@@ -257,12 +271,23 @@ class Hlavas_Terms_Admin {
 			'delete' === sanitize_text_field( wp_unslash( $_GET['action'] ) )
 		) {
 			$term_id = (int) $_GET['term_id'];
+			$term    = $this->repo->find( $term_id );
 
 			if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ?? '' ) ), 'hlavas_delete_' . $term_id ) ) {
 				wp_die( 'Neplatný bezpečnostní token.' );
 			}
 
 			$this->repo->delete( $term_id );
+			hlavas_terms_log_event(
+				'term_deleted',
+				'Termin byl smazan.',
+				[
+					'term_id'   => $term_id,
+					'term_type' => (string) ( $term->term_type ?? '' ),
+					'title'     => (string) ( $term->title ?? $term->label ?? '' ),
+				],
+				'warning'
+			);
 
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=hlavas-terms&message=deleted' )
@@ -275,12 +300,24 @@ class Hlavas_Terms_Admin {
 			'toggle_visibility' === sanitize_text_field( wp_unslash( $_GET['action'] ) )
 		) {
 			$term_id = (int) $_GET['term_id'];
+			$term    = $this->repo->find( $term_id );
 
 			if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ?? '' ) ), 'hlavas_visibility_' . $term_id ) ) {
 				wp_die( 'Neplatný bezpečnostní token.' );
 			}
 
 			$this->repo->toggle_visibility( $term_id );
+			$updated_term = $this->repo->find( $term_id );
+			hlavas_terms_log_event(
+				'term_visibility_toggled',
+				'Viditelnost terminu na webu byla zmenena.',
+				[
+					'term_id'    => $term_id,
+					'term_type'  => (string) ( $term->term_type ?? '' ),
+					'title'      => (string) ( $term->title ?? $term->label ?? '' ),
+					'is_visible' => ! empty( $updated_term->is_visible ) ? 1 : 0,
+				]
+			);
 
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=' . rawurlencode( sanitize_text_field( wp_unslash( $_GET['page'] ?? 'hlavas-terms' ) ) ) . '&message=visibility_changed' )
@@ -302,6 +339,17 @@ class Hlavas_Terms_Admin {
 			$value_mode   = sanitize_text_field( wp_unslash( $_POST['value_mode'] ?? hlavas_terms_get_sync_value_mode() ) );
 			$sync_form_id = absint( $_POST['sync_form_id'] ?? 0 );
 			$result       = $this->sync->execute( $value_mode, $sync_form_id > 0 ? $sync_form_id : null );
+			hlavas_terms_log_event(
+				'forms_synced',
+				! empty( $result['success'] ) ? 'Synchronizace formularu dokoncena.' : 'Synchronizace formularu selhala.',
+				[
+					'form_id'    => $sync_form_id,
+					'value_mode' => $value_mode,
+					'success'    => ! empty( $result['success'] ) ? 1 : 0,
+					'details'    => is_array( $result['details'] ?? null ) ? array_values( $result['details'] ) : [],
+				],
+				! empty( $result['success'] ) ? 'info' : 'error'
+			);
 
 			set_transient( 'hlavas_sync_result', $result, 60 );
 
@@ -360,6 +408,14 @@ class Hlavas_Terms_Admin {
 			}
 
 			$this->type_repo->delete( $type_id );
+			hlavas_terms_log_event(
+				'qualification_type_deleted',
+				'Typ kvalifikace byl smazan.',
+				[
+					'type_id' => $type_id,
+				],
+				'warning'
+			);
 
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=hlavas-terms-types&message=deleted' )
@@ -394,6 +450,16 @@ class Hlavas_Terms_Admin {
 		];
 
 		if ( empty( $data['date_start'] ) ) {
+			hlavas_terms_log_event(
+				'term_save_failed',
+				'Ulozeni terminu selhalo kvuli chybejicimu datu od.',
+				[
+					'term_id'   => $id,
+					'term_type' => $data['term_type'],
+					'title'     => $data['title'],
+				],
+				'error'
+			);
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=hlavas-terms-edit&term_id=' . $id . '&error=missing_fields' )
 			);
@@ -429,6 +495,17 @@ class Hlavas_Terms_Admin {
 		}
 
 		if ( $this->repo->key_exists( $data['term_key'], $id ?: null ) ) {
+			hlavas_terms_log_event(
+				'term_save_failed',
+				'Ulozeni terminu selhalo kvuli duplicitnimu internimu klici.',
+				[
+					'term_id'   => $id,
+					'term_type' => $data['term_type'],
+					'term_key'  => $data['term_key'],
+					'title'     => $data['title'],
+				],
+				'error'
+			);
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=hlavas-terms-edit&term_id=' . $id . '&error=duplicate_key' )
 			);
@@ -441,6 +518,26 @@ class Hlavas_Terms_Admin {
 		} else {
 			$redirect_id = $this->repo->insert( $data );
 		}
+
+		hlavas_terms_log_event(
+			$id > 0 ? 'term_updated' : 'term_created',
+			$id > 0 ? 'Termin byl upraven.' : 'Termin byl vytvoren.',
+			[
+				'term_id'               => (int) $redirect_id,
+				'term_type'             => $data['term_type'],
+				'qualification_type_id' => (int) $data['qualification_type_id'],
+				'title'                 => $data['title'],
+				'label'                 => $data['label'],
+				'term_key'              => $data['term_key'],
+				'date_start'            => $data['date_start'],
+				'date_end'              => (string) ( $data['date_end'] ?? '' ),
+				'enrollment_deadline'   => (string) ( $data['enrollment_deadline'] ?? '' ),
+				'capacity'              => (int) $data['capacity'],
+				'is_visible'            => (int) $data['is_visible'],
+				'is_active'             => (int) $data['is_active'],
+				'is_archived'           => (int) $data['is_archived'],
+			]
+		);
 
 		if ( $id > 0 ) {
 			$redirect_page = 'kurz' === $data['term_type'] ? 'hlavas-terms-kurzy' : 'hlavas-terms-zkousky';
@@ -467,6 +564,14 @@ class Hlavas_Terms_Admin {
 		$term    = $term_id > 0 ? $this->repo->find( $term_id ) : null;
 
 		if ( ! $term ) {
+			hlavas_terms_log_event(
+				'term_sync_failed',
+				'Synchronizace terminu selhala, protoze termin nebyl nalezen.',
+				[
+					'term_id' => $term_id,
+				],
+				'error'
+			);
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=hlavas-terms-edit&error=sync_missing_term' )
 			);
@@ -496,6 +601,20 @@ class Hlavas_Terms_Admin {
 			60
 		);
 
+		hlavas_terms_log_event(
+			'term_synced',
+			$success ? 'Synchronizace terminu do Fluent Forms dokoncena.' : 'Synchronizace terminu do Fluent Forms selhala.',
+			[
+				'term_id'   => $term_id,
+				'term_type' => (string) ( $term->term_type ?? '' ),
+				'title'     => (string) ( $term->title ?? $term->label ?? '' ),
+				'form_ids'  => array_values( $form_ids ),
+				'success'   => $success ? 1 : 0,
+				'details'   => $details,
+			],
+			$success ? 'info' : 'error'
+		);
+
 		wp_safe_redirect(
 			admin_url(
 				'admin.php?page=hlavas-terms-edit&term_id=' . $term_id . '&message=' . ( $success ? 'synced_to_ff' : 'sync_failed' )
@@ -515,6 +634,15 @@ class Hlavas_Terms_Admin {
 		$payload  = $this->build_report_payload_from_request( $page_slug );
 
 		if ( ! $payload ) {
+			hlavas_terms_log_event(
+				'report_failed',
+				'Report se nepodarilo vygenerovat.',
+				[
+					'action' => $action,
+					'page'   => $page_slug,
+				],
+				'error'
+			);
 			wp_safe_redirect( $this->get_report_redirect_url( $page_slug, 'report_failed' ) );
 			exit;
 		}
@@ -522,15 +650,43 @@ class Hlavas_Terms_Admin {
 		switch ( $action ) {
 			case 'download':
 				$format = sanitize_text_field( wp_unslash( $_REQUEST['report_format'] ?? 'csv' ) );
+				hlavas_terms_log_event(
+					'report_downloaded',
+					'Byl stazen report.',
+					[
+						'page'   => $page_slug,
+						'title'  => (string) ( $payload['title'] ?? '' ),
+						'format' => $format,
+					]
+				);
 				$this->output_report_download( $payload, $format );
 				exit;
 
 			case 'print':
+				hlavas_terms_log_event(
+					'report_printed',
+					'Byl otevren tisk reportu.',
+					[
+						'page'  => $page_slug,
+						'title' => (string) ( $payload['title'] ?? '' ),
+					]
+				);
 				$this->render_printable_report( $payload );
 				exit;
 
 			case 'email':
 				$sent = $this->send_report_email( $payload );
+				hlavas_terms_log_event(
+					'report_emailed',
+					$sent ? 'Report byl odeslan e-mailem.' : 'Odeslani reportu e-mailem selhalo.',
+					[
+						'page'       => $page_slug,
+						'title'      => (string) ( $payload['title'] ?? '' ),
+						'recipient'  => hlavas_terms_get_report_email(),
+						'success'    => $sent ? 1 : 0,
+					],
+					$sent ? 'info' : 'error'
+				);
 				wp_safe_redirect( $this->get_report_redirect_url( $page_slug, $sent ? 'emailed' : 'email_failed' ) );
 				exit;
 		}
@@ -971,6 +1127,14 @@ class Hlavas_Terms_Admin {
 		];
 
 		if ( '' === $data['name'] ) {
+			hlavas_terms_log_event(
+				'qualification_type_save_failed',
+				'Ulozeni typu kvalifikace selhalo kvuli chybejicimu nazvu.',
+				[
+					'type_id' => $type_id,
+				],
+				'error'
+			);
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=hlavas-terms-types&error=missing_name' )
 			);
@@ -989,6 +1153,20 @@ class Hlavas_Terms_Admin {
 			$type_id  = (int) $this->type_repo->insert( $data );
 			$redirect = 'created';
 		}
+
+		hlavas_terms_log_event(
+			'updated' === $redirect ? 'qualification_type_updated' : 'qualification_type_created',
+			'updated' === $redirect ? 'Typ kvalifikace byl upraven.' : 'Typ kvalifikace byl vytvoren.',
+			[
+				'type_id'              => $type_id,
+				'name'                 => $data['name'],
+				'accreditation_number' => $data['accreditation_number'],
+				'has_courses'          => (int) $data['has_courses'],
+				'has_exams'            => (int) $data['has_exams'],
+				'course_form_id'       => (int) $data['course_form_id'],
+				'exam_form_id'         => (int) $data['exam_form_id'],
+			]
+		);
 
 		wp_safe_redirect(
 			admin_url( 'admin.php?page=hlavas-terms-types&type_id=' . $type_id . '&message=' . $redirect )
@@ -1055,6 +1233,16 @@ class Hlavas_Terms_Admin {
 				break;
 		}
 
+		hlavas_terms_log_event(
+			'bulk_action_executed',
+			'Hromadna akce nad terminy byla provedena.',
+			[
+				'action'   => $action,
+				'term_ids' => array_values( $ids ),
+			],
+			'delete' === $action ? 'warning' : 'info'
+		);
+
 		wp_safe_redirect(
 			admin_url( 'admin.php?page=hlavas-terms&message=bulk_done' )
 		);
@@ -1088,6 +1276,16 @@ class Hlavas_Terms_Admin {
 		update_option( HLAVAS_TERMS_OPTION_DEBUG_MODE, $debug_mode );
 		update_option( HLAVAS_TERMS_OPTION_SYNC_VALUE_MODE, $sync_value_mode );
 		update_option( HLAVAS_TERMS_OPTION_REPORT_EMAIL, $report_email );
+		hlavas_terms_log_event(
+			'settings_saved',
+			'Nastaveni pluginu bylo ulozeno.',
+			[
+				'form_id'         => $form_id,
+				'debug_mode'      => $debug_mode,
+				'sync_value_mode' => $sync_value_mode,
+				'report_email'    => $report_email,
+			]
+		);
 
 		wp_safe_redirect(
 			admin_url( 'admin.php?page=hlavas-terms-settings&message=saved' )
@@ -1103,6 +1301,13 @@ class Hlavas_Terms_Admin {
 	private function handle_settings_export(): void {
 		$payload  = $this->build_settings_backup_payload();
 		$filename = 'hlavas-terms-backup-' . gmdate( 'Y-m-d-His' ) . '.json';
+		hlavas_terms_log_event(
+			'settings_exported',
+			'Byl stazen backup nastaveni a dat pluginu.',
+			[
+				'filename' => $filename,
+			]
+		);
 
 		nocache_headers();
 		header( 'Content-Type: application/json; charset=utf-8' );
@@ -1120,6 +1325,12 @@ class Hlavas_Terms_Admin {
 		$replace_existing = ! empty( $_POST['hlavas_terms_replace_existing'] );
 
 		if ( empty( $_FILES['hlavas_terms_backup_file']['tmp_name'] ) ) {
+			hlavas_terms_log_event(
+				'settings_import_failed',
+				'Import backupu selhal, protoze nebyl vybran soubor.',
+				[],
+				'error'
+			);
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=hlavas-terms-settings&message=import_missing_file' )
 			);
@@ -1131,6 +1342,12 @@ class Hlavas_Terms_Admin {
 		$payload       = is_string( $file_contents ) ? json_decode( $file_contents, true ) : null;
 
 		if ( ! is_array( $payload ) ) {
+			hlavas_terms_log_event(
+				'settings_import_failed',
+				'Import backupu selhal, protoze soubor nebyl platny.',
+				[],
+				'error'
+			);
 			wp_safe_redirect(
 				admin_url( 'admin.php?page=hlavas-terms-settings&message=import_invalid_file' )
 			);
@@ -1138,6 +1355,15 @@ class Hlavas_Terms_Admin {
 		}
 
 		$result_message = $this->import_settings_backup_payload( $payload, $replace_existing );
+		hlavas_terms_log_event(
+			'imported' === $result_message ? 'settings_imported' : 'settings_import_failed',
+			'imported' === $result_message ? 'Backup pluginu byl importovan.' : 'Import backupu pluginu selhal.',
+			[
+				'replace_existing' => $replace_existing ? 1 : 0,
+				'result'           => $result_message,
+			],
+			'imported' === $result_message ? 'warning' : 'error'
+		);
 
 		wp_safe_redirect(
 			admin_url( 'admin.php?page=hlavas-terms-settings&message=' . rawurlencode( $result_message ) )
@@ -1153,9 +1379,71 @@ class Hlavas_Terms_Admin {
 	private function handle_sync_log_reset(): void {
 		update_option( HLAVAS_TERMS_OPTION_SYNC_LOG, [], false );
 		update_option( HLAVAS_TERMS_OPTION_FORM_SYNC_LOG, [], false );
+		hlavas_terms_log_event(
+			'sync_logs_cleared',
+			'Logy synchronizace terminu a formularu byly vymazany.',
+			[],
+			'warning'
+		);
 
 		wp_safe_redirect(
 			admin_url( 'admin.php?page=hlavas-terms-settings&message=sync_log_reset' )
+		);
+		exit;
+	}
+
+	/**
+	 * Download activity log as TXT.
+	 *
+	 * @return void
+	 */
+	private function handle_log_download(): void {
+		$log_file = hlavas_terms_get_log_file_path();
+
+		if ( ! file_exists( $log_file ) || ! is_readable( $log_file ) ) {
+			wp_safe_redirect(
+				admin_url( 'admin.php?page=hlavas-terms-settings&message=log_missing' )
+			);
+			exit;
+		}
+
+		hlavas_terms_log_event(
+			'activity_log_downloaded',
+			'Byl stazen textovy log pluginu.',
+			[
+				'log_file' => $log_file,
+			]
+		);
+
+		nocache_headers();
+		header( 'Content-Type: text/plain; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="hlavas-terms-activity-log-' . gmdate( 'Y-m-d-His' ) . '.txt"' );
+		readfile( $log_file );
+		exit;
+	}
+
+	/**
+	 * Clear activity log and keep one reset marker.
+	 *
+	 * @return void
+	 */
+	private function handle_log_clear(): void {
+		if ( ! hlavas_terms_clear_log_file() ) {
+			wp_safe_redirect(
+				admin_url( 'admin.php?page=hlavas-terms-settings&message=log_clear_failed' )
+			);
+			exit;
+		}
+
+		hlavas_terms_log_event(
+			'activity_log_cleared',
+			'Textovy log pluginu byl vymazan.',
+			[],
+			'warning'
+		);
+
+		wp_safe_redirect(
+			admin_url( 'admin.php?page=hlavas-terms-settings&message=log_cleared' )
 		);
 		exit;
 	}
@@ -1286,6 +1574,8 @@ class Hlavas_Terms_Admin {
 		$debug_mode        = hlavas_terms_is_debug_enabled();
 		$sync_value_mode   = hlavas_terms_get_sync_value_mode();
 		$report_email      = hlavas_terms_get_report_email();
+		$activity_log_path = hlavas_terms_get_log_file_path();
+		$activity_log_lines = hlavas_terms_get_log_lines( 200 );
 		$plugin_info       = hlavas_terms_get_plugin_info();
 		$types             = $this->type_repo->get_all();
 		$settings_status   = $this->get_settings_status();

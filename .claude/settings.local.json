@@ -4,7 +4,8 @@
       "WebSearch",
       "WebFetch(domain:developers.fluentforms.com)",
       "WebFetch(domain:fluentforms.com)",
-      "WebFetch(domain:wpmanageninja.com)"
+      "WebFetch(domain:wpmanageninja.com)",
+      "Bash(powershell -Command ':*)"
     ]
   }
 }

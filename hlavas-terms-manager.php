@@ -29,12 +29,15 @@ define( 'HLAVAS_TERMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HLAVAS_TERMS_URL', plugin_dir_url( __FILE__ ) );
 define( 'HLAVAS_TERMS_TABLE', 'hlavas_terms' );
 define( 'HLAVAS_TERMS_TYPES_TABLE', 'hlavas_term_types' );
+define( 'HLAVAS_TERMS_LOG_DIR_NAME', 'logs' );
+define( 'HLAVAS_TERMS_LOG_FILE_NAME', 'activity.log' );
 define( 'HLAVAS_TERMS_OPTION_FORM_ID', 'hlavas_terms_fluent_form_id' );
 define( 'HLAVAS_TERMS_OPTION_DEBUG_MODE', 'hlavas_terms_debug_mode' );
 define( 'HLAVAS_TERMS_OPTION_SYNC_LOG', 'hlavas_terms_sync_log' );
 define( 'HLAVAS_TERMS_OPTION_FORM_SYNC_LOG', 'hlavas_terms_form_sync_log' );
 define( 'HLAVAS_TERMS_OPTION_SYNC_VALUE_MODE', 'hlavas_terms_sync_value_mode' );
 define( 'HLAVAS_TERMS_OPTION_REPORT_EMAIL', 'hlavas_terms_report_email' );
+define( 'HLAVAS_TERMS_OPTION_PLUGIN_VERSION', 'hlavas_terms_plugin_version' );
 define( 'HLAVAS_TERMS_DEFAULT_FORM_ID', 3 );
 define( 'HLAVAS_TERMS_PLUGIN_NAME', 'HLAVAS – Správa termínů kurzů a zkoušek' );
 define( 'HLAVAS_TERMS_PLUGIN_SLUG', 'hlavas-terms' );
@@ -70,6 +73,45 @@ function hlavas_terms_get_types_table_name(): string {
 	/** @var wpdb $wpdb */
 
 	return $wpdb->prefix . HLAVAS_TERMS_TYPES_TABLE;
+}
+
+/**
+ * Returns plugin log directory path.
+ *
+ * @return string
+ */
+function hlavas_terms_get_log_dir(): string {
+	return trailingslashit( HLAVAS_TERMS_DIR . HLAVAS_TERMS_LOG_DIR_NAME );
+}
+
+/**
+ * Returns plugin activity log file path.
+ *
+ * @return string
+ */
+function hlavas_terms_get_log_file_path(): string {
+	return hlavas_terms_get_log_dir() . HLAVAS_TERMS_LOG_FILE_NAME;
+}
+
+/**
+ * Ensures log storage exists inside the plugin directory.
+ *
+ * @return bool
+ */
+function hlavas_terms_ensure_log_storage(): bool {
+	$log_dir = hlavas_terms_get_log_dir();
+
+	if ( ! is_dir( $log_dir ) && ! wp_mkdir_p( $log_dir ) ) {
+		return false;
+	}
+
+	$index_file = $log_dir . 'index.php';
+
+	if ( ! file_exists( $index_file ) ) {
+		file_put_contents( $index_file, "<?php\n// Silence is golden.\n" );
+	}
+
+	return true;
 }
 
 /**
@@ -157,6 +199,25 @@ function hlavas_terms_get_report_email(): string {
 	$email   = sanitize_email( (string) get_option( HLAVAS_TERMS_OPTION_REPORT_EMAIL, $default ) );
 
 	return is_email( $email ) ? $email : $default;
+}
+
+/**
+ * Returns installed plugin version stored in options.
+ *
+ * @return string
+ */
+function hlavas_terms_get_installed_version(): string {
+	return (string) get_option( HLAVAS_TERMS_OPTION_PLUGIN_VERSION, '0' );
+}
+
+/**
+ * Stores current plugin version as installed version.
+ *
+ * @param string|null $version Optional explicit version.
+ * @return void
+ */
+function hlavas_terms_set_installed_version( ?string $version = null ): void {
+	update_option( HLAVAS_TERMS_OPTION_PLUGIN_VERSION, $version ?: HLAVAS_TERMS_VERSION );
 }
 
 /**
@@ -254,6 +315,93 @@ function hlavas_terms_mark_forms_synced( array $form_ids, ?string $datetime = nu
 }
 
 /**
+ * Writes one activity record into plugin log file.
+ *
+ * @param string               $action  Action identifier.
+ * @param string               $message Human-readable summary.
+ * @param array<string, mixed> $context Extra structured context.
+ * @param string               $level   Log level.
+ * @return void
+ */
+function hlavas_terms_log_event(
+	string $action,
+	string $message,
+	array $context = [],
+	string $level = 'info'
+): void {
+	if ( ! hlavas_terms_ensure_log_storage() ) {
+		return;
+	}
+
+	$user      = wp_get_current_user();
+	$user_id   = $user instanceof WP_User ? (int) $user->ID : 0;
+	$user_name = $user instanceof WP_User && '' !== $user->display_name ? $user->display_name : ( $user->user_login ?? 'system' );
+	$user_mail = $user instanceof WP_User ? (string) $user->user_email : '';
+	$timestamp = current_time( 'mysql' );
+	$context   = array_merge(
+		[
+			'user_id'    => $user_id,
+			'user_name'  => $user_name,
+			'user_email' => $user_mail,
+		],
+		$context
+	);
+
+	$line = sprintf(
+		"[%s] [%s] action=%s message=\"%s\" context=%s%s",
+		$timestamp,
+		strtoupper( sanitize_key( $level ) ?: 'INFO' ),
+		sanitize_key( $action ),
+		str_replace( '"', '\"', wp_strip_all_tags( $message ) ),
+		wp_json_encode( $context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
+		PHP_EOL
+	);
+
+	file_put_contents( hlavas_terms_get_log_file_path(), $line, FILE_APPEND | LOCK_EX );
+}
+
+/**
+ * Reads the last N log lines from activity log.
+ *
+ * @param int $limit Number of lines to return.
+ * @return array<int, string>
+ */
+function hlavas_terms_get_log_lines( int $limit = 200 ): array {
+	$log_file = hlavas_terms_get_log_file_path();
+
+	if ( ! file_exists( $log_file ) || ! is_readable( $log_file ) ) {
+		return [];
+	}
+
+	$lines = file( $log_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES );
+
+	if ( ! is_array( $lines ) ) {
+		return [];
+	}
+
+	$lines = array_values( array_filter( array_map( 'strval', $lines ) ) );
+
+	if ( $limit > 0 && count( $lines ) > $limit ) {
+		$lines = array_slice( $lines, -$limit );
+	}
+
+	return array_reverse( $lines );
+}
+
+/**
+ * Clears plugin activity log file.
+ *
+ * @return bool
+ */
+function hlavas_terms_clear_log_file(): bool {
+	if ( ! hlavas_terms_ensure_log_storage() ) {
+		return false;
+	}
+
+	return false !== file_put_contents( hlavas_terms_get_log_file_path(), '' );
+}
+
+/**
  * Returns plugin metadata for admin info page.
  *
  * @return array<string, string>
@@ -314,7 +462,9 @@ spl_autoload_register(
  */
 function hlavas_terms_activate(): void {
 	require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
-	Hlavas_Terms_Activator::activate();
+	Hlavas_Terms_Activator::activate( hlavas_terms_get_installed_version() );
+	hlavas_terms_ensure_log_storage();
+	hlavas_terms_log_event( 'plugin_activated', 'Plugin byl aktivovan.', [], 'info' );
 }
 register_activation_hook( __FILE__, 'hlavas_terms_activate' );
 
@@ -325,6 +475,7 @@ register_activation_hook( __FILE__, 'hlavas_terms_activate' );
  */
 function hlavas_terms_deactivate(): void {
 	delete_transient( 'hlavas_terms_sync_preview' );
+	hlavas_terms_log_event( 'plugin_deactivated', 'Plugin byl deaktivovan.', [], 'warning' );
 }
 register_deactivation_hook( __FILE__, 'hlavas_terms_deactivate' );
 
@@ -347,12 +498,59 @@ function hlavas_terms_load_textdomain(): void {
  * @return void
  */
 function hlavas_terms_maybe_upgrade_db(): void {
-	$db_version = get_option( 'hlavas_terms_db_version', '0' );
+	$db_version      = (string) get_option( 'hlavas_terms_db_version', '0' );
+	$plugin_version  = hlavas_terms_get_installed_version();
+	$tracked_version = version_compare( $db_version, $plugin_version, '>=' ) ? $db_version : $plugin_version;
 
-	if ( version_compare( $db_version, HLAVAS_TERMS_VERSION, '<' ) ) {
+	if ( version_compare( $tracked_version, HLAVAS_TERMS_VERSION, '<' ) ) {
 		require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
-		Hlavas_Terms_Activator::activate();
+		Hlavas_Terms_Activator::activate( $tracked_version );
+		hlavas_terms_log_event(
+			'plugin_upgraded',
+			'Plugin byl aktualizovan a probehly upgrade kroky.',
+			[
+				'from_version' => $tracked_version,
+				'to_version'   => HLAVAS_TERMS_VERSION,
+			]
+		);
 	}
+}
+
+/**
+ * Runs after WordPress upgrader finishes plugin update.
+ *
+ * @param WP_Upgrader $upgrader_object Upgrader instance.
+ * @param array       $hook_extra Upgrade metadata.
+ * @return void
+ */
+function hlavas_terms_handle_upgrader_complete( $upgrader_object, array $hook_extra ): void {
+	unset( $upgrader_object );
+
+	if ( empty( $hook_extra['type'] ) || 'plugin' !== $hook_extra['type'] ) {
+		return;
+	}
+
+	if ( empty( $hook_extra['action'] ) || 'update' !== $hook_extra['action'] ) {
+		return;
+	}
+
+	$plugins = is_array( $hook_extra['plugins'] ?? null ) ? $hook_extra['plugins'] : [];
+	$self    = plugin_basename( __FILE__ );
+
+	if ( ! in_array( $self, $plugins, true ) ) {
+		return;
+	}
+
+	require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
+	Hlavas_Terms_Activator::activate( hlavas_terms_get_installed_version() );
+	hlavas_terms_log_event(
+		'plugin_upgrade_hook',
+		'WordPress upgrader dokoncil aktualizaci pluginu.',
+		[
+			'plugin' => $self,
+			'to_version' => HLAVAS_TERMS_VERSION,
+		]
+	);
 }
 
 /**
@@ -397,3 +595,4 @@ function hlavas_terms_init(): void {
 	hlavas_terms_boot_services();
 }
 add_action( 'plugins_loaded', 'hlavas_terms_init' );
+add_action( 'upgrader_process_complete', 'hlavas_terms_handle_upgrader_complete', 10, 2 );
