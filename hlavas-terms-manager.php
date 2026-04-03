@@ -1,17 +1,20 @@
 <?php
 /**
- * Plugin Name: HLAVAS - Správa termínů TEST
+ * Plugin Name: HLAVAS – Správa termínů kurzů a zkoušek
  * Plugin URI:  https://hlavas.cz
- * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms.
- * Version:     1.0.0
- * Author:      HLAVAS
- * Author URI:  https://hlavas.cz
+ * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms pro projekt HLAVAS.cz realizovaný Jihomoravskou radou dětí a mládeže (JRDM).
+ * Version:     1.0.1
+ * Author:      Michal "Mealtiner" Truhlář pro JRDM / HLAVAS.cz
+ * Author URI:  https://mealtiner.cz
  * Text Domain: hlavas-terms
  * Domain Path: /languages
- * Requires PHP: 8.0
+ * Requires PHP: 8.4
  * Requires at least: 6.0
  * License:     GPL v2 or later
  */
+
+// Plugin vyvinut pro projekt HLAVAS.cz
+// Zadavatel / projektový rámec: Jihomoravská rada dětí a mládeže (JRDM)
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
