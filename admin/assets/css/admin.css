@@ -1,0 +1,138 @@
+/* HLAVAS Terms Manager – Admin Styles */
+
+.hlavas-terms-wrap {
+    max-width: 1200px;
+}
+
+/* Filters bar */
+.hlavas-filters {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin: 15px 0;
+    padding: 10px 15px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+}
+.hlavas-filters label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+}
+.hlavas-filters select {
+    min-width: 100px;
+}
+
+/* Table tweaks */
+.hlavas-terms-table .column-id { width: 50px; }
+.hlavas-terms-table .column-type { width: 80px; }
+.hlavas-terms-table .column-key { width: 180px; }
+.hlavas-terms-table .column-date { width: 100px; }
+.hlavas-terms-table .column-capacity { width: 70px; }
+.hlavas-terms-table .column-active { width: 60px; text-align: center; }
+.hlavas-terms-table .column-archived { width: 60px; text-align: center; }
+.hlavas-terms-table .column-sort { width: 60px; }
+.hlavas-terms-table .column-actions { width: 160px; }
+
+/* Row states */
+.hlavas-terms-table tr.hlavas-past td {
+    opacity: 0.55;
+}
+.hlavas-terms-table tr.hlavas-inactive td {
+    background-color: #fcf0f0;
+}
+.hlavas-terms-table tr.hlavas-archived td {
+    background-color: #f0f0f0;
+}
+
+/* Badges */
+.hlavas-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.hlavas-badge-kurz {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+.hlavas-badge-zkouska {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+/* Status indicators */
+.hlavas-status-yes {
+    color: #2e7d32;
+    font-weight: 700;
+    font-size: 15px;
+}
+.hlavas-status-no {
+    color: #c62828;
+    font-weight: 700;
+    font-size: 15px;
+}
+.hlavas-status-archived {
+    font-size: 14px;
+}
+
+/* Edit form */
+.hlavas-term-form .form-table th {
+    width: 180px;
+    padding-top: 15px;
+}
+.hlavas-term-form .button-small {
+    margin-left: 6px;
+    vertical-align: baseline;
+}
+
+/* Sync page info */
+.hlavas-sync-info {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    padding: 15px 20px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+/* Capacity bar */
+.hlavas-capacity-bar {
+    display: inline-block;
+    width: 80px;
+    height: 12px;
+    background: #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-right: 5px;
+}
+.hlavas-capacity-fill {
+    height: 100%;
+    background: #4caf50;
+    border-radius: 6px;
+    transition: width 0.3s;
+}
+.hlavas-capacity-fill.high {
+    background: #ff9800;
+}
+.hlavas-capacity-fill.full {
+    background: #f44336;
+}
+
+/* Debug output */
+.hlavas-debug-output pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Button styling for sync */
+.button-hero {
+    font-size: 15px !important;
+    padding: 10px 24px !important;
+    height: auto !important;
+}
