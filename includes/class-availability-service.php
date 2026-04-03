@@ -34,10 +34,13 @@ class Hlavas_Terms_Availability_Service {
     }
 
     /**
-     * Count active submissions for a given term_key.
+     * Count active submissions for a given term_key across ALL configured forms.
      *
      * Searches in fluentform_entry_details for field_name = 'termin_kurz' or
      * 'termin_zkouska' with field_value matching the term_key (or legacy label).
+     *
+     * Covers the default form AND every per-qualification-type course/exam form
+     * so that typed forms are not missed.
      *
      * @param string $term_key The internal term key.
      * @return int Number of active enrollments.
@@ -46,11 +49,16 @@ class Hlavas_Terms_Availability_Service {
         global $wpdb;
         /** @var wpdb $wpdb */
 
-        $entry_table       = $wpdb->prefix . 'fluentform_entry_details';
-        $submission_table  = $wpdb->prefix . 'fluentform_submissions';
-        $form_id           = hlavas_terms_get_form_id();
+        $entry_table      = $wpdb->prefix . 'fluentform_entry_details';
+        $submission_table = $wpdb->prefix . 'fluentform_submissions';
 
-        // Also check legacy label value for backward compatibility
+        if ( ! $this->table_exists( $entry_table ) || ! $this->table_exists( $submission_table ) ) {
+            return 0;
+        }
+
+        $form_ids = hlavas_terms_get_all_form_ids();
+
+        // Also check legacy label value for backward compatibility.
         $term            = $this->repo->find_by_key( $term_key );
         $values_to_check = [ $term_key ];
 
@@ -58,24 +66,27 @@ class Hlavas_Terms_Availability_Service {
             $values_to_check[] = $term->label;
         }
 
-        $placeholders = implode( ',', array_fill( 0, count( $values_to_check ), '%s' ) );
-        $field_names  = implode( "', '", self::TERM_FIELDS );
+        $form_placeholders  = implode( ',', array_fill( 0, count( $form_ids ), '%d' ) );
+        $field_placeholders = implode( ',', array_fill( 0, count( self::TERM_FIELDS ), '%s' ) );
+        $value_placeholders = implode( ',', array_fill( 0, count( $values_to_check ), '%s' ) );
 
         // Count entries that:
-        // 1. Belong to the configured Fluent Form
+        // 1. Belong to any plugin-configured Fluent Form
         // 2. Have field_name 'termin_kurz' or 'termin_zkouska'
         // 3. Have field_value matching our term_key or legacy label
         // 4. The parent submission is not trashed
         $primary = (int) $wpdb->get_var(
             $wpdb->prepare(
-            "SELECT COUNT(DISTINCT e.submission_id) FROM {$entry_table} e
-             INNER JOIN {$submission_table} s ON e.submission_id = s.id
-             WHERE e.form_id = %d
-               AND e.field_name IN ('{$field_names}')
-               AND e.field_value IN ({$placeholders})
-               AND s.status != 'trashed'",
-                $form_id,
-            ...$values_to_check
+                "SELECT COUNT(DISTINCT e.submission_id)
+                 FROM {$entry_table} e
+                 INNER JOIN {$submission_table} s ON e.submission_id = s.id
+                 WHERE e.form_id IN ({$form_placeholders})
+                   AND e.field_name IN ({$field_placeholders})
+                   AND e.field_value IN ({$value_placeholders})
+                   AND s.status != 'trashed'",
+                ...$form_ids,
+                ...self::TERM_FIELDS,
+                ...$values_to_check
             )
         );
 
@@ -92,13 +103,19 @@ class Hlavas_Terms_Availability_Service {
      *
      * This is a fallback if entry_details is not populated for these fields.
      * Fluent Forms stores the full response as JSON in fluentform_submissions.
+     * Covers ALL configured forms, not only the default one.
      */
     public function count_enrollments_from_responses( string $term_key ): int {
         global $wpdb;
         /** @var wpdb $wpdb */
 
         $submission_table = $wpdb->prefix . 'fluentform_submissions';
-        $form_id          = hlavas_terms_get_form_id();
+
+        if ( ! $this->table_exists( $submission_table ) ) {
+            return 0;
+        }
+
+        $form_ids = hlavas_terms_get_all_form_ids();
 
         $term            = $this->repo->find_by_key( $term_key );
         $values_to_check = [ $term_key ];
@@ -106,12 +123,14 @@ class Hlavas_Terms_Availability_Service {
             $values_to_check[] = $term->label;
         }
 
-        // Query all non-trashed submissions for the configured form.
+        $form_placeholders = implode( ',', array_fill( 0, count( $form_ids ), '%d' ) );
+
+        // Query all non-trashed submissions across all configured forms.
         $submissions = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT response FROM {$submission_table}
-             WHERE form_id = %d AND status != 'trashed'",
-                $form_id
+                 WHERE form_id IN ({$form_placeholders}) AND status != 'trashed'",
+                ...$form_ids
             )
         );
 
@@ -122,7 +141,7 @@ class Hlavas_Terms_Availability_Service {
                 continue;
             }
 
-            // Check both field names
+            // Check both field names.
             foreach ( self::TERM_FIELDS as $field_name ) {
                 $value = $response[ $field_name ] ?? '';
 
@@ -197,5 +216,20 @@ class Hlavas_Terms_Availability_Service {
         }
 
         return $report;
+    }
+
+    /**
+     * Check whether a given DB table exists.
+     *
+     * @param string $table_name Full table name including WP prefix.
+     * @return bool
+     */
+    private function table_exists( string $table_name ): bool {
+        global $wpdb;
+        /** @var wpdb $wpdb */
+
+        return (bool) $wpdb->get_var(
+            $wpdb->prepare( 'SHOW TABLES LIKE %s', $table_name )
+        );
     }
 }

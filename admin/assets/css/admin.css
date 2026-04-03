@@ -292,6 +292,26 @@
     flex-wrap: wrap;
     margin: 16px 0 18px;
 }
+.hlavas-inline-header-form {
+    display: inline-flex;
+    margin: 0;
+    align-items: center;
+}
+.hlavas-list-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.hlavas-list-header .wp-heading-inline {
+    margin-right: 0;
+}
+.hlavas-header-sync-info {
+    color: #646970;
+    font-size: 13px;
+    line-height: 1.4;
+}
 .hlavas-report-inline-form {
     display: inline-flex;
     gap: 10px;

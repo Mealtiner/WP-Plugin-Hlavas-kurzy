@@ -1,6 +1,31 @@
 <?php
-if ( ! defined( 'ABSPATH' ) ) exit;
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 /** @var array<string, string> $plugin_info */
+/** @var array<int, array<string, mixed>> $form_registry */
+
+$grouped_forms = [];
+
+foreach ( $form_registry as $form_item ) {
+	$form_id = (int) ( $form_item['form_id'] ?? 0 );
+
+	if ( $form_id <= 0 ) {
+		continue;
+	}
+
+	if ( ! isset( $grouped_forms[ $form_id ] ) ) {
+		$grouped_forms[ $form_id ] = [
+			'form_id'    => $form_id,
+			'form_title' => (string) ( $form_item['form_title'] ?? '' ),
+			'exists'     => ! empty( $form_item['exists'] ),
+			'status'     => (string) ( $form_item['status'] ?? '' ),
+			'usages'     => [],
+		];
+	}
+
+	$grouped_forms[ $form_id ]['usages'][] = (string) ( $form_item['usage'] ?? '' );
+}
 ?>
 <div class="wrap hlavas-terms-wrap">
 	<h1>Info o HLAVASovi</h1>
@@ -61,8 +86,45 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 				<td><code><?php echo esc_html( $plugin_info['types_table'] ); ?></code></td>
 			</tr>
 			<tr>
-				<th>Napojený Fluent Forms formulář</th>
-				<td>ID <strong><?php echo esc_html( $plugin_info['configured_form'] ); ?></strong></td>
+				<th>Propojené Fluent Forms formuláře</th>
+				<td>
+					<?php if ( empty( $grouped_forms ) ) : ?>
+						<span class="hlavas-subline">Žádný formulář zatím není propojen.</span>
+					<?php else : ?>
+						<ul style="margin: 0; padding-left: 18px;">
+							<?php foreach ( $grouped_forms as $form_id => $grouped_form ) : ?>
+								<?php
+								$form_url = add_query_arg(
+									[
+										'page'      => 'fluent_forms',
+										'form_id'   => $form_id,
+										'route'     => 'settings',
+										'sub_route' => 'form_settings',
+									],
+									admin_url( 'admin.php' )
+								) . '#basic_settings';
+								?>
+								<li>
+									<a href="<?php echo esc_url( $form_url ); ?>">
+										ID <?php echo esc_html( (string) $form_id ); ?>
+									</a>
+									<?php if ( ! empty( $grouped_form['form_title'] ) ) : ?>
+										<strong><?php echo esc_html( ' - ' . (string) $grouped_form['form_title'] ); ?></strong>
+									<?php endif; ?>
+									<?php if ( ! empty( $grouped_form['status'] ) ) : ?>
+										<span class="hlavas-subline">(stav: <?php echo esc_html( (string) $grouped_form['status'] ); ?>)</span>
+									<?php endif; ?>
+									<div class="hlavas-subline">
+										Využití: <?php echo esc_html( implode( ', ', array_unique( array_filter( $grouped_form['usages'] ) ) ) ); ?>
+									</div>
+									<?php if ( empty( $grouped_form['exists'] ) ) : ?>
+										<div class="hlavas-subline hlavas-status-no">Formulář v databázi Fluent Forms nebyl nalezen.</div>
+									<?php endif; ?>
+								</li>
+							<?php endforeach; ?>
+						</ul>
+					<?php endif; ?>
+				</td>
 			</tr>
 			<tr>
 				<th>Debug režim</th>
@@ -83,7 +145,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 	<p>Plugin spravuje termíny kurzů a zkoušek, synchronizuje je do Fluent Forms, hlídá kapacity při odeslání formuláře a v administraci zobrazuje přehled obsazenosti.</p>
 
 	<h2>Proč tato stránka existuje</h2>
-	<p>Slouží jako rychlý technický rozcestník pro správce webu nebo vývojáře. Když je potřeba dohledat verzi, kompatibilitu, cílový formulář nebo zapnutý debug, vše je na jednom místě.</p>
+	<p>Slouží jako rychlý technický rozcestník pro správce webu nebo vývojáře. Když je potřeba dohledat verzi, kompatibilitu, propojené formuláře nebo zapnutý debug, vše je na jednom místě.</p>
 
 	<p>
 		<a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-settings' ) ); ?>" class="button button-primary">Otevřít nastavení pluginu</a>

@@ -1601,7 +1601,9 @@ class Hlavas_Terms_Admin {
 	 * @return void
 	 */
 	public function page_info(): void {
-		$plugin_info = hlavas_terms_get_plugin_info();
+		$plugin_info   = hlavas_terms_get_plugin_info();
+		$types         = $this->type_repo->get_all();
+		$form_registry = $this->get_settings_form_registry( $types, hlavas_terms_get_form_id() );
 
 		include HLAVAS_TERMS_DIR . 'admin/views/info.php';
 	}

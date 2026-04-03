@@ -3,7 +3,7 @@
  * Plugin Name: HLAVAS – Správa termínů kurzů a zkoušek
  * Plugin URI:  https://hlavas.cz
  * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms pro projekt HLAVAS.cz realizovaný Jihomoravskou radou dětí a mládeže (JRDM).
- * Version:     1.1.2
+ * Version:     1.2.1
  * Author:      Michal "Mealtiner" Truhlář
  * Author URI:  https://mealtiner.cz
  * Text Domain: hlavas-terms
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Plugin constants.
  */
-define( 'HLAVAS_TERMS_VERSION', '1.1.2' );
+define( 'HLAVAS_TERMS_VERSION', '1.2.1' );
 define( 'HLAVAS_TERMS_FILE', __FILE__ );
 define( 'HLAVAS_TERMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HLAVAS_TERMS_URL', plugin_dir_url( __FILE__ ) );
@@ -82,6 +82,49 @@ function hlavas_terms_get_form_id(): int {
 	$form_id = (int) get_option( HLAVAS_TERMS_OPTION_FORM_ID, HLAVAS_TERMS_DEFAULT_FORM_ID );
 
 	return $form_id > 0 ? $form_id : HLAVAS_TERMS_DEFAULT_FORM_ID;
+}
+
+/**
+ * Returns all Fluent Forms form IDs configured in the plugin:
+ * the default form plus any per-qualification-type course/exam forms.
+ *
+ * Used by the availability service and submit validator so that
+ * enrollments and capacity checks cover every configured form,
+ * not just the single default one.
+ *
+ * @return array<int, int> Unique, positive form IDs.
+ */
+function hlavas_terms_get_all_form_ids(): array {
+	global $wpdb;
+	/** @var wpdb $wpdb */
+
+	$form_ids    = [ hlavas_terms_get_form_id() ];
+	$types_table = hlavas_terms_get_types_table_name();
+
+	// Only query when the table already exists (avoids errors on first activation).
+	$table_check = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $types_table ) );
+
+	if ( $table_check ) {
+		$typed_ids = $wpdb->get_col(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			"SELECT course_form_id FROM {$types_table} WHERE course_form_id > 0
+			 UNION
+			 SELECT exam_form_id   FROM {$types_table} WHERE exam_form_id   > 0"
+		);
+
+		foreach ( $typed_ids as $id ) {
+			$form_ids[] = (int) $id;
+		}
+	}
+
+	return array_values(
+		array_unique(
+			array_filter(
+				array_map( 'intval', $form_ids ),
+				static fn( int $id ): bool => $id > 0
+			)
+		)
+	);
 }
 
 /**

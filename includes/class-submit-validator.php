@@ -69,7 +69,9 @@ class Hlavas_Terms_Submit_Validator {
 	public function validate( array $errors, array $data, object $form, array $fields ): array {
 		unset( $fields );
 
-		if ( (int) $form->id !== hlavas_terms_get_form_id() ) {
+		// Validate all configured forms (default + per-qualification-type course/exam forms),
+		// not just the single default form, so typed forms also get capacity enforcement.
+		if ( ! in_array( (int) $form->id, hlavas_terms_get_all_form_ids(), true ) ) {
 			return $errors;
 		}
 

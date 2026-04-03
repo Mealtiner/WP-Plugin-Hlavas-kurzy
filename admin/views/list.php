@@ -25,21 +25,50 @@ if ( isset( $_GET['filter_archived'] ) && '' !== (string) $_GET['filter_archived
 if ( isset( $_GET['filter_future'] ) && '1' === (string) $_GET['filter_future'] ) {
 	$report_args['filter_future'] = '1';
 }
+
+$form_sync_log        = hlavas_terms_get_form_sync_log();
+$last_form_synced_at  = '';
+$form_sync_timestamps = array_values( array_filter( array_map( 'strval', $form_sync_log ) ) );
+
+if ( ! empty( $form_sync_timestamps ) ) {
+	rsort( $form_sync_timestamps, SORT_STRING );
+	$last_form_synced_at = (string) $form_sync_timestamps[0];
+}
 ?>
 <div class="wrap hlavas-terms-wrap">
-	<h1 class="wp-heading-inline">
-		<?php
-		$type_label = $filters['term_type'] ?? null;
-		if ( 'kurz' === $type_label ) {
-			echo 'Termíny kurzů';
-		} elseif ( 'zkouska' === $type_label ) {
-			echo 'Termíny zkoušek';
-		} else {
-			echo 'Správa termínů';
-		}
-		?>
-	</h1>
-	<a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit' ) ); ?>" class="page-title-action">Přidat termín</a>
+	<div class="hlavas-list-header">
+		<h1 class="wp-heading-inline">
+			<?php
+			$type_label = $filters['term_type'] ?? null;
+			if ( 'kurz' === $type_label ) {
+				echo 'Termíny kurzů';
+			} elseif ( 'zkouska' === $type_label ) {
+				echo 'Termíny zkoušek';
+			} else {
+				echo 'Správa termínů';
+			}
+			?>
+		</h1>
+		<a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit' ) ); ?>" class="page-title-action">Přidat termín</a>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="hlavas-inline-header-form">
+			<?php wp_nonce_field( 'hlavas_sync', '_hlavas_sync_nonce' ); ?>
+			<input type="hidden" name="sync_form_id" value="0">
+			<input type="hidden" name="value_mode" value="<?php echo esc_attr( hlavas_terms_get_sync_value_mode() ); ?>">
+			<button
+				type="submit"
+				name="hlavas_sync_execute"
+				value="1"
+				class="page-title-action"
+				onclick="return confirm('Opravdu spustit FF synchronizaci pro vsechny nakonfigurovane formulare?');"
+			>
+				FF synchronizace
+			</button>
+		</form>
+		<span class="hlavas-header-sync-info">
+			Poslední FF synchronizace:
+			<strong><?php echo '' !== $last_form_synced_at ? esc_html( $last_form_synced_at ) : 'Nikdy'; ?></strong>
+		</span>
+	</div>
 	<hr class="wp-header-end">
 
 	<?php if ( 'deleted' === $message ) : ?>
