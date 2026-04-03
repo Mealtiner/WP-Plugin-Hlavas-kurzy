@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: HLAVAS - Správa termínů
+ * Plugin Name: HLAVAS - Správa termínů TEST
  * Plugin URI:  https://hlavas.cz
  * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms.
  * Version:     1.0.0
