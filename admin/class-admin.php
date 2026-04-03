@@ -23,6 +23,14 @@ if ( ! class_exists( 'Hlavas_Terms_Availability_Service', false ) ) {
 	require_once dirname( __DIR__ ) . '/includes/class-availability-service.php';
 }
 
+if ( ! class_exists( 'Hlavas_Terms_Qualification_Type_Repository', false ) ) {
+	require_once dirname( __DIR__ ) . '/includes/class-qualification-type-repository.php';
+}
+
+if ( ! class_exists( 'Hlavas_Terms_Participant_Service', false ) ) {
+	require_once dirname( __DIR__ ) . '/includes/class-participant-service.php';
+}
+
 class Hlavas_Terms_Admin {
 
 	/**
@@ -47,12 +55,28 @@ class Hlavas_Terms_Admin {
 	private Hlavas_Terms_Availability_Service $availability;
 
 	/**
+	 * Qualification types repository.
+	 *
+	 * @var Hlavas_Terms_Qualification_Type_Repository
+	 */
+	private Hlavas_Terms_Qualification_Type_Repository $type_repo;
+
+	/**
+	 * Participant service.
+	 *
+	 * @var Hlavas_Terms_Participant_Service
+	 */
+	private Hlavas_Terms_Participant_Service $participants;
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {
 		$this->repo         = new Hlavas_Terms_Repository();
 		$this->sync         = new Hlavas_Terms_Fluent_Sync_Service( $this->repo );
 		$this->availability = new Hlavas_Terms_Availability_Service( $this->repo );
+		$this->type_repo    = new Hlavas_Terms_Qualification_Type_Repository();
+		$this->participants = new Hlavas_Terms_Participant_Service( $this->repo, $this->type_repo );
 
 		add_action( 'admin_menu', [ $this, 'register_menu' ] );
 		add_action( 'admin_init', [ $this, 'handle_actions' ] );
@@ -70,8 +94,8 @@ class Hlavas_Terms_Admin {
 	 */
 	public function register_menu(): void {
 		add_menu_page(
-			'Přihlášky – Termíny',
-			'Přihlášky',
+			'Kurzy a zkoušky',
+			'Kurzy a zkoušky',
 			'manage_options',
 			'hlavas-terms',
 			[ $this, 'page_list' ],
@@ -81,8 +105,8 @@ class Hlavas_Terms_Admin {
 
 		add_submenu_page(
 			'hlavas-terms',
-			'Všechny termíny',
-			'Všechny termíny',
+			'Přehled',
+			'Přehled',
 			'manage_options',
 			'hlavas-terms',
 			[ $this, 'page_list' ]
@@ -90,8 +114,17 @@ class Hlavas_Terms_Admin {
 
 		add_submenu_page(
 			'hlavas-terms',
-			'Kurzy',
-			'Kurzy',
+			'Typy kurzů',
+			'Typy kurzů',
+			'manage_options',
+			'hlavas-terms-types',
+			[ $this, 'page_types' ]
+		);
+
+		add_submenu_page(
+			'hlavas-terms',
+			'Termíny kurzů',
+			'Termíny kurzů',
 			'manage_options',
 			'hlavas-terms-kurzy',
 			[ $this, 'page_list_kurzy' ]
@@ -99,8 +132,8 @@ class Hlavas_Terms_Admin {
 
 		add_submenu_page(
 			'hlavas-terms',
-			'Zkoušky',
-			'Zkoušky',
+			'Termíny zkoušek',
+			'Termíny zkoušek',
 			'manage_options',
 			'hlavas-terms-zkousky',
 			[ $this, 'page_list_zkousky' ]
@@ -117,6 +150,33 @@ class Hlavas_Terms_Admin {
 
 		add_submenu_page(
 			'hlavas-terms',
+			'Obsazenost a kapacita',
+			'Obsazenost a kapacita',
+			'manage_options',
+			'hlavas-terms-availability',
+			[ $this, 'page_availability' ]
+		);
+
+		add_submenu_page(
+			'hlavas-terms',
+			'Účastníci',
+			'Účastníci',
+			'manage_options',
+			'hlavas-terms-participants',
+			[ $this, 'page_participants' ]
+		);
+
+		add_submenu_page(
+			'hlavas-terms',
+			'Synchronizace s Fluent Forms',
+			'Synchronizace s Fluent Forms',
+			'manage_options',
+			'hlavas-terms-sync',
+			[ $this, 'page_sync' ]
+		);
+
+		add_submenu_page(
+			'hlavas-terms',
 			'Nastavení',
 			'Nastavení',
 			'manage_options',
@@ -126,26 +186,8 @@ class Hlavas_Terms_Admin {
 
 		add_submenu_page(
 			'hlavas-terms',
-			'Synchronizace',
-			'Synchronizace do FF',
-			'manage_options',
-			'hlavas-terms-sync',
-			[ $this, 'page_sync' ]
-		);
-
-		add_submenu_page(
-			'hlavas-terms',
-			'Obsazenost',
-			'Obsazenost',
-			'manage_options',
-			'hlavas-terms-availability',
-			[ $this, 'page_availability' ]
-		);
-
-		add_submenu_page(
-			'hlavas-terms',
-			'Info o HLAVASovi',
-			'Info o HLAVASovi',
+			'Nápověda / O pluginu',
+			'Nápověda / O pluginu',
 			'manage_options',
 			'hlavas-terms-info',
 			[ $this, 'page_info' ]
@@ -215,6 +257,24 @@ class Hlavas_Terms_Admin {
 		}
 
 		if (
+			isset( $_GET['action'], $_GET['term_id'] ) &&
+			'toggle_visibility' === sanitize_text_field( wp_unslash( $_GET['action'] ) )
+		) {
+			$term_id = (int) $_GET['term_id'];
+
+			if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ?? '' ) ), 'hlavas_visibility_' . $term_id ) ) {
+				wp_die( 'Neplatný bezpečnostní token.' );
+			}
+
+			$this->repo->toggle_visibility( $term_id );
+
+			wp_safe_redirect(
+				admin_url( 'admin.php?page=' . rawurlencode( sanitize_text_field( wp_unslash( $_GET['page'] ?? 'hlavas-terms' ) ) ) . '&message=visibility_changed' )
+			);
+			exit;
+		}
+
+		if (
 			isset( $_POST['hlavas_bulk_action'] ) &&
 			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_bulk_nonce'] ?? '' ) ), 'hlavas_bulk' )
 		) {
@@ -242,6 +302,31 @@ class Hlavas_Terms_Admin {
 		) {
 			$this->handle_settings_save();
 		}
+
+		if (
+			isset( $_POST['hlavas_type_save'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_type_nonce'] ?? '' ) ), 'hlavas_type_save' )
+		) {
+			$this->handle_type_save();
+		}
+
+		if (
+			isset( $_GET['action'], $_GET['type_id'] ) &&
+			'delete_type' === sanitize_text_field( wp_unslash( $_GET['action'] ) )
+		) {
+			$type_id = (int) $_GET['type_id'];
+
+			if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ?? '' ) ), 'hlavas_delete_type_' . $type_id ) ) {
+				wp_die( 'Neplatný bezpečnostní token.' );
+			}
+
+			$this->type_repo->delete( $type_id );
+
+			wp_safe_redirect(
+				admin_url( 'admin.php?page=hlavas-terms-types&message=deleted' )
+			);
+			exit;
+		}
 	}
 
 	/**
@@ -253,17 +338,20 @@ class Hlavas_Terms_Admin {
 		$id = (int) ( $_POST['term_id'] ?? 0 );
 
 		$data = [
-			'term_type'   => sanitize_text_field( wp_unslash( $_POST['term_type'] ?? 'kurz' ) ),
-			'term_key'    => sanitize_text_field( wp_unslash( $_POST['term_key'] ?? '' ) ),
-			'title'       => sanitize_text_field( wp_unslash( $_POST['title'] ?? '' ) ),
-			'label'       => sanitize_text_field( wp_unslash( $_POST['label'] ?? '' ) ),
-			'date_start'  => sanitize_text_field( wp_unslash( $_POST['date_start'] ?? '' ) ),
-			'date_end'    => sanitize_text_field( wp_unslash( $_POST['date_end'] ?? '' ) ) ?: null,
-			'capacity'    => absint( $_POST['capacity'] ?? 0 ),
-			'is_active'   => isset( $_POST['is_active'] ) ? 1 : 0,
-			'is_archived' => isset( $_POST['is_archived'] ) ? 1 : 0,
-			'sort_order'  => (int) ( $_POST['sort_order'] ?? 0 ),
-			'notes'       => sanitize_textarea_field( wp_unslash( $_POST['notes'] ?? '' ) ),
+			'term_type'             => sanitize_text_field( wp_unslash( $_POST['term_type'] ?? 'kurz' ) ),
+			'term_key'              => sanitize_text_field( wp_unslash( $_POST['term_key'] ?? '' ) ),
+			'qualification_type_id' => absint( $_POST['qualification_type_id'] ?? 0 ),
+			'title'                 => sanitize_text_field( wp_unslash( $_POST['title'] ?? '' ) ),
+			'label'                 => sanitize_text_field( wp_unslash( $_POST['label'] ?? '' ) ),
+			'date_start'            => sanitize_text_field( wp_unslash( $_POST['date_start'] ?? '' ) ),
+			'date_end'              => sanitize_text_field( wp_unslash( $_POST['date_end'] ?? '' ) ) ?: null,
+			'enrollment_deadline'   => sanitize_text_field( wp_unslash( $_POST['enrollment_deadline'] ?? '' ) ) ?: null,
+			'capacity'              => absint( $_POST['capacity'] ?? 0 ),
+			'is_visible'            => isset( $_POST['is_visible'] ) ? 1 : 0,
+			'is_active'             => isset( $_POST['is_active'] ) ? 1 : 0,
+			'is_archived'           => isset( $_POST['is_archived'] ) ? 1 : 0,
+			'sort_order'            => (int) ( $_POST['sort_order'] ?? 0 ),
+			'notes'                 => sanitize_textarea_field( wp_unslash( $_POST['notes'] ?? '' ) ),
 		];
 
 		if ( empty( $data['date_start'] ) ) {
@@ -279,6 +367,10 @@ class Hlavas_Terms_Admin {
 
 		if ( 'zkouska' === $data['term_type'] ) {
 			$data['date_end'] = $data['date_start'];
+		}
+
+		if ( empty( $data['enrollment_deadline'] ) ) {
+			$data['enrollment_deadline'] = $data['date_start'];
 		}
 
 		if ( empty( $data['term_key'] ) ) {
@@ -311,8 +403,63 @@ class Hlavas_Terms_Admin {
 			$redirect_id = $this->repo->insert( $data );
 		}
 
+		if ( $id > 0 ) {
+			$redirect_page = 'kurz' === $data['term_type'] ? 'hlavas-terms-kurzy' : 'hlavas-terms-zkousky';
+
+			wp_safe_redirect(
+				admin_url( 'admin.php?page=' . $redirect_page . '&message=saved' )
+			);
+			exit;
+		}
+
 		wp_safe_redirect(
 			admin_url( 'admin.php?page=hlavas-terms-edit&term_id=' . (int) $redirect_id . '&message=saved' )
+		);
+		exit;
+	}
+
+	/**
+	 * Handle qualification type save.
+	 *
+	 * @return void
+	 */
+	private function handle_type_save(): void {
+		$type_id = (int) ( $_POST['type_id'] ?? 0 );
+		$data    = [
+			'name'                 => sanitize_text_field( wp_unslash( $_POST['name'] ?? '' ) ),
+			'description'          => sanitize_textarea_field( wp_unslash( $_POST['description'] ?? '' ) ),
+			'notes'                => sanitize_textarea_field( wp_unslash( $_POST['notes'] ?? '' ) ),
+			'is_accredited'        => isset( $_POST['is_accredited'] ) ? 1 : 0,
+			'accreditation_number' => sanitize_text_field( wp_unslash( $_POST['accreditation_number'] ?? '' ) ),
+			'has_courses'          => isset( $_POST['has_courses'] ) ? 1 : 0,
+			'has_exams'            => isset( $_POST['has_exams'] ) ? 1 : 0,
+			'course_form_id'       => absint( $_POST['course_form_id'] ?? 0 ),
+			'exam_form_id'         => absint( $_POST['exam_form_id'] ?? 0 ),
+			'sort_order'           => (int) ( $_POST['sort_order'] ?? 0 ),
+		];
+
+		if ( '' === $data['name'] ) {
+			wp_safe_redirect(
+				admin_url( 'admin.php?page=hlavas-terms-types&error=missing_name' )
+			);
+			exit;
+		}
+
+		if ( empty( $data['has_courses'] ) && empty( $data['has_exams'] ) ) {
+			$data['has_courses'] = 1;
+			$data['has_exams']   = 1;
+		}
+
+		if ( $type_id > 0 ) {
+			$this->type_repo->update( $type_id, $data );
+			$redirect = 'updated';
+		} else {
+			$type_id  = (int) $this->type_repo->insert( $data );
+			$redirect = 'created';
+		}
+
+		wp_safe_redirect(
+			admin_url( 'admin.php?page=hlavas-terms-types&type_id=' . $type_id . '&message=' . $redirect )
 		);
 		exit;
 	}
@@ -471,10 +618,11 @@ class Hlavas_Terms_Admin {
 	 * @return void
 	 */
 	public function page_edit(): void {
-		$term_id = (int) ( $_GET['term_id'] ?? 0 );
-		$term    = $term_id > 0 ? $this->repo->find( $term_id ) : null;
-		$error   = sanitize_text_field( wp_unslash( $_GET['error'] ?? '' ) );
-		$message = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
+		$term_id             = (int) ( $_GET['term_id'] ?? 0 );
+		$term                = $term_id > 0 ? $this->repo->find( $term_id ) : null;
+		$error               = sanitize_text_field( wp_unslash( $_GET['error'] ?? '' ) );
+		$message             = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
+		$qualification_types = $this->type_repo->get_all();
 
 		include HLAVAS_TERMS_DIR . 'admin/views/edit.php';
 	}
@@ -529,5 +677,47 @@ class Hlavas_Terms_Admin {
 		$plugin_info = hlavas_terms_get_plugin_info();
 
 		include HLAVAS_TERMS_DIR . 'admin/views/info.php';
+	}
+
+	/**
+	 * Render qualification types page.
+	 *
+	 * @return void
+	 */
+	public function page_types(): void {
+		$message      = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
+		$error        = sanitize_text_field( wp_unslash( $_GET['error'] ?? '' ) );
+		$type_id      = (int) ( $_GET['type_id'] ?? 0 );
+		$types        = $this->type_repo->get_all();
+		$current_type = $type_id > 0 ? $this->type_repo->find( $type_id ) : null;
+
+		include HLAVAS_TERMS_DIR . 'admin/views/types.php';
+	}
+
+	/**
+	 * Render participants placeholder page.
+	 *
+	 * @return void
+	 */
+	public function page_participants(): void {
+		$qualification_type_id = absint( $_GET['qualification_type_id'] ?? 0 );
+		$term_type             = sanitize_text_field( wp_unslash( $_GET['participant_term_type'] ?? '' ) );
+		$term_id               = absint( $_GET['participant_term_id'] ?? 0 );
+		$filters               = [
+			'qualification_type_id' => $qualification_type_id,
+			'term_type'             => in_array( $term_type, [ 'kurz', 'zkouska' ], true ) ? $term_type : '',
+			'term_id'               => $term_id,
+		];
+		$participants          = $this->participants->get_participants( $filters );
+		$qualification_types   = $this->type_repo->get_all();
+		$terms                 = $this->repo->get_all(
+			[
+				'is_archived' => false,
+				'orderby'     => 'date_start',
+				'order'       => 'ASC',
+			]
+		);
+
+		include HLAVAS_TERMS_DIR . 'admin/views/participants.php';
 	}
 }

@@ -26,15 +26,62 @@
 }
 
 /* Table tweaks */
+.hlavas-terms-table {
+    width: 100%;
+    table-layout: auto !important;
+}
+.hlavas-terms-table th,
+.hlavas-terms-table td {
+    vertical-align: top;
+}
 .hlavas-terms-table .column-id { width: 50px; }
-.hlavas-terms-table .column-type { width: 80px; }
-.hlavas-terms-table .column-key { width: 180px; }
-.hlavas-terms-table .column-date { width: 100px; }
-.hlavas-terms-table .column-capacity { width: 70px; }
-.hlavas-terms-table .column-active { width: 60px; text-align: center; }
-.hlavas-terms-table .column-archived { width: 60px; text-align: center; }
-.hlavas-terms-table .column-sort { width: 60px; }
+.hlavas-terms-table .column-type { width: 64px; }
+.hlavas-terms-table .column-qualification { width: 230px; min-width: 190px; }
+.hlavas-terms-table .column-title { min-width: 340px; }
+.hlavas-terms-table .column-date { width: 96px; white-space: nowrap; }
+.hlavas-terms-table .column-deadline { width: 96px; white-space: nowrap; }
+.hlavas-terms-table .column-capacity { width: 55px; text-align: center; }
+.hlavas-terms-table .column-visible { width: 55px; text-align: center; }
+.hlavas-terms-table .column-active { width: 55px; text-align: center; }
+.hlavas-terms-table .column-archived { width: 55px; text-align: center; }
+.hlavas-terms-table .column-sort { width: 55px; text-align: center; }
 .hlavas-terms-table .column-actions { width: 160px; }
+.hlavas-terms-table .column-title strong a {
+    display: inline-block;
+    white-space: nowrap;
+    max-width: 100%;
+}
+.hlavas-terms-table .column-qualification .hlavas-qualification-main {
+    display: inline-block;
+    line-height: 1.35;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+.hlavas-subline {
+    margin-top: 4px;
+    color: #646970;
+    font-size: 12px;
+    line-height: 1.35;
+}
+.hlavas-subline-code {
+    display: inline-block;
+    margin-top: 3px;
+    font-size: 11px;
+    color: #50575e;
+    white-space: nowrap;
+}
+.hlavas-visibility-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+.hlavas-visibility-toggle .dashicons {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+}
 
 /* Row states */
 .hlavas-terms-table tr.hlavas-past td {
@@ -91,6 +138,30 @@
     vertical-align: baseline;
 }
 
+.hlavas-terms-table td.column-capacity,
+.hlavas-terms-table td.column-visible,
+.hlavas-terms-table td.column-active,
+.hlavas-terms-table td.column-archived,
+.hlavas-terms-table td.column-sort,
+.hlavas-terms-table th.column-capacity,
+.hlavas-terms-table th.column-visible,
+.hlavas-terms-table th.column-active,
+.hlavas-terms-table th.column-archived,
+.hlavas-terms-table th.column-sort {
+    text-align: center;
+}
+
+.hlavas-admin-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(320px, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+.hlavas-admin-side .form-table th {
+    width: 150px;
+}
+
 /* Sync page info */
 .hlavas-sync-info {
     background: #fff;
@@ -111,6 +182,9 @@
     vertical-align: middle;
     margin-right: 5px;
 }
+.hlavas-capacity-bar-wide {
+    width: 120px;
+}
 .hlavas-capacity-fill {
     height: 100%;
     background: #4caf50;
@@ -122,6 +196,122 @@
 }
 .hlavas-capacity-fill.full {
     background: #f44336;
+}
+.hlavas-capacity-percent {
+    display: inline-block;
+    min-width: 34px;
+    white-space: nowrap;
+}
+
+/* Availability tables */
+.hlavas-availability-table {
+    width: 100%;
+    max-width: 1100px;
+    table-layout: auto !important;
+}
+.hlavas-availability-table th,
+.hlavas-availability-table td {
+    vertical-align: top;
+}
+.hlavas-availability-table .column-qualification {
+    width: 260px;
+    min-width: 220px;
+}
+.hlavas-availability-table .column-term {
+    min-width: 320px;
+}
+.hlavas-availability-table .column-status {
+    width: 170px;
+    white-space: nowrap;
+}
+.hlavas-availability-table td:nth-child(3),
+.hlavas-availability-table td:nth-child(4),
+.hlavas-availability-table td:nth-child(5),
+.hlavas-availability-table th:nth-child(3),
+.hlavas-availability-table th:nth-child(4),
+.hlavas-availability-table th:nth-child(5) {
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* Participants table */
+.hlavas-participants-table {
+    width: 100%;
+    max-width: 1200px;
+    table-layout: auto !important;
+}
+.hlavas-participants-table th,
+.hlavas-participants-table td {
+    vertical-align: top;
+}
+.hlavas-participants-table .column-participant {
+    width: 280px;
+    min-width: 240px;
+}
+.hlavas-participants-table .column-registration {
+    width: 280px;
+    min-width: 240px;
+}
+.hlavas-participants-table .column-term {
+    min-width: 290px;
+}
+.hlavas-participants-table .column-created {
+    width: 130px;
+    white-space: nowrap;
+}
+.hlavas-participants-table .column-status {
+    width: 90px;
+}
+.hlavas-participants-table .column-actions {
+    width: 120px;
+}
+.hlavas-participant-details summary {
+    cursor: pointer;
+    list-style: none;
+}
+.hlavas-participant-details summary::-webkit-details-marker {
+    display: none;
+}
+.hlavas-participant-name {
+    display: block;
+    font-weight: 600;
+    line-height: 1.4;
+}
+.hlavas-participant-card {
+    margin-top: 10px;
+    padding: 12px 14px;
+    background: #f6f7f7;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+}
+.hlavas-participant-card p {
+    margin: 0 0 8px;
+}
+.hlavas-participant-card p:last-child {
+    margin-bottom: 0;
+}
+.hlavas-entry-status {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #e5e7eb;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.hlavas-entry-status-read {
+    background: #e8f5e9;
+    color: #1b5e20;
+}
+.hlavas-entry-status-unread {
+    background: #fff3e0;
+    color: #bf5b00;
+}
+.hlavas-entry-status-paid {
+    background: #e3f2fd;
+    color: #0d47a1;
 }
 
 /* Debug output */
@@ -135,4 +325,32 @@
     font-size: 15px !important;
     padding: 10px 24px !important;
     height: auto !important;
+}
+
+@media (max-width: 1100px) {
+    .hlavas-admin-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .hlavas-terms-table .column-title {
+        min-width: 260px;
+    }
+
+    .hlavas-terms-table .column-qualification {
+        min-width: 160px;
+    }
+
+    .hlavas-availability-table .column-term {
+        min-width: 240px;
+    }
+
+    .hlavas-availability-table .column-qualification {
+        min-width: 170px;
+    }
+
+    .hlavas-participants-table .column-registration,
+    .hlavas-participants-table .column-participant,
+    .hlavas-participants-table .column-term {
+        min-width: 200px;
+    }
 }

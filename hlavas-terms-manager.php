@@ -3,8 +3,8 @@
  * Plugin Name: HLAVAS – Správa termínů kurzů a zkoušek
  * Plugin URI:  https://hlavas.cz
  * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms pro projekt HLAVAS.cz realizovaný Jihomoravskou radou dětí a mládeže (JRDM).
- * Version:     1.0.1
- * Author:      Michal "Mealtiner" Truhlář pro JRDM / HLAVAS.cz
+ * Version:     1.1.2
+ * Author:      Michal "Mealtiner" Truhlář
  * Author URI:  https://mealtiner.cz
  * Text Domain: hlavas-terms
  * Domain Path: /languages
@@ -23,17 +23,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Plugin constants.
  */
-define( 'HLAVAS_TERMS_VERSION', '1.0.1' );
+define( 'HLAVAS_TERMS_VERSION', '1.1.2' );
 define( 'HLAVAS_TERMS_FILE', __FILE__ );
 define( 'HLAVAS_TERMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HLAVAS_TERMS_URL', plugin_dir_url( __FILE__ ) );
 define( 'HLAVAS_TERMS_TABLE', 'hlavas_terms' );
+define( 'HLAVAS_TERMS_TYPES_TABLE', 'hlavas_term_types' );
 define( 'HLAVAS_TERMS_OPTION_FORM_ID', 'hlavas_terms_fluent_form_id' );
 define( 'HLAVAS_TERMS_OPTION_DEBUG_MODE', 'hlavas_terms_debug_mode' );
 define( 'HLAVAS_TERMS_DEFAULT_FORM_ID', 3 );
 define( 'HLAVAS_TERMS_PLUGIN_NAME', 'HLAVAS – Správa termínů kurzů a zkoušek' );
 define( 'HLAVAS_TERMS_PLUGIN_SLUG', 'hlavas-terms' );
-define( 'HLAVAS_TERMS_AUTHOR', 'Michal "Mealtiner" Truhlář pro JRDM / HLAVAS.cz' );
+define( 'HLAVAS_TERMS_AUTHOR', 'Michal "Mealtiner" Truhlář' );
+define( 'HLAVAS_TERMS_AUTHOR_EMAIL', 'mealtiner@mealtiner.net' );
+define( 'HLAVAS_TERMS_ORGANIZATION', 'Jihomoravská rada dětí a mládeže (JRDM)' );
+define( 'HLAVAS_TERMS_ORGANIZATION_EMAIL', 'info@jrdm.cz' );
 define( 'HLAVAS_TERMS_AUTHOR_URL', 'https://mealtiner.cz' );
 define( 'HLAVAS_TERMS_PLUGIN_URL', 'https://hlavas.cz' );
 define( 'HLAVAS_TERMS_LICENSE', 'GPL v2 or later' );
@@ -50,6 +54,18 @@ function hlavas_terms_get_table_name(): string {
 	/** @var wpdb $wpdb */
 
 	return $wpdb->prefix . HLAVAS_TERMS_TABLE;
+}
+
+/**
+ * Returns the full qualification types table name including WP prefix.
+ *
+ * @return string
+ */
+function hlavas_terms_get_types_table_name(): string {
+	global $wpdb;
+	/** @var wpdb $wpdb */
+
+	return $wpdb->prefix . HLAVAS_TERMS_TYPES_TABLE;
 }
 
 /**
@@ -85,10 +101,14 @@ function hlavas_terms_get_plugin_info(): array {
 		'version'          => HLAVAS_TERMS_VERSION,
 		'plugin_url'       => HLAVAS_TERMS_PLUGIN_URL,
 		'author'           => HLAVAS_TERMS_AUTHOR,
+		'author_email'     => HLAVAS_TERMS_AUTHOR_EMAIL,
 		'author_url'       => HLAVAS_TERMS_AUTHOR_URL,
+		'organization'     => HLAVAS_TERMS_ORGANIZATION,
+		'organization_email' => HLAVAS_TERMS_ORGANIZATION_EMAIL,
 		'license'          => HLAVAS_TERMS_LICENSE,
 		'text_domain'      => 'hlavas-terms',
 		'table'            => hlavas_terms_get_table_name(),
+		'types_table'      => hlavas_terms_get_types_table_name(),
 		'min_php'          => HLAVAS_TERMS_MIN_PHP,
 		'min_wp'           => HLAVAS_TERMS_MIN_WP,
 		'current_php'      => PHP_VERSION,

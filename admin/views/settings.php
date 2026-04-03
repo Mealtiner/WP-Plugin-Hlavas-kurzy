@@ -33,7 +33,8 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 						>
 						<p class="description">
 							Zadejte ID konkrétního Fluent Forms formuláře, ke kterému se má plugin připojit.
-							Používá se pro synchronizaci termínů, validaci kapacity i výpočet obsazenosti.
+							Používá se jako výchozí formulář pro synchronizaci termínů, validaci kapacity i výpočet obsazenosti.
+							U jednotlivých typů kvalifikací lze už teď evidovat vlastní ID formulářů pro další rozšíření.
 						</p>
 					</td>
 				</tr>

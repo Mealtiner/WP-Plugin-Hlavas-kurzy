@@ -17,10 +17,18 @@ class Hlavas_Terms_Repository {
 	private string $table;
 
 	/**
+	 * Qualification types table name.
+	 *
+	 * @var string
+	 */
+	private string $types_table;
+
+	/**
 	 * Repository constructor.
 	 */
 	public function __construct() {
-		$this->table = hlavas_terms_get_table_name();
+		$this->table       = hlavas_terms_get_table_name();
+		$this->types_table = hlavas_terms_get_types_table_name();
 	}
 
 	/* ---------------------------------------------------------------
@@ -39,7 +47,10 @@ class Hlavas_Terms_Repository {
 
 		$result = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT * FROM {$this->table} WHERE id = %d",
+				"SELECT {$this->get_select_columns()}
+				FROM {$this->table} t
+				LEFT JOIN {$this->types_table} qt ON qt.id = t.qualification_type_id
+				WHERE t.id = %d",
 				$id
 			)
 		);
@@ -59,7 +70,10 @@ class Hlavas_Terms_Repository {
 
 		$result = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT * FROM {$this->table} WHERE term_key = %s",
+				"SELECT {$this->get_select_columns()}
+				FROM {$this->table} t
+				LEFT JOIN {$this->types_table} qt ON qt.id = t.qualification_type_id
+				WHERE t.term_key = %s",
 				$term_key
 			)
 		);
@@ -99,23 +113,23 @@ class Hlavas_Terms_Repository {
 		$values = [];
 
 		if ( null !== $args['term_type'] ) {
-			$where[]  = 'term_type = %s';
+			$where[]  = 't.term_type = %s';
 			$values[] = $args['term_type'];
 		}
 
 		if ( null !== $args['is_active'] ) {
-			$where[]  = 'is_active = %d';
+			$where[]  = 't.is_active = %d';
 			$values[] = (int) $args['is_active'];
 		}
 
 		if ( null !== $args['is_archived'] ) {
-			$where[]  = 'is_archived = %d';
+			$where[]  = 't.is_archived = %d';
 			$values[] = (int) $args['is_archived'];
 		}
 
 		if ( ! empty( $args['future_only'] ) ) {
 			$today    = current_time( 'Y-m-d' );
-			$where[]  = 'COALESCE(date_end, date_start) >= %s';
+			$where[]  = 'COALESCE(t.enrollment_deadline, t.date_start, t.date_end) >= %s';
 			$values[] = $today;
 		}
 
@@ -130,6 +144,7 @@ class Hlavas_Terms_Repository {
 			'capacity',
 			'is_active',
 			'is_archived',
+			'is_visible',
 			'sort_order',
 			'created_at',
 			'updated_at',
@@ -138,7 +153,12 @@ class Hlavas_Terms_Repository {
 		$orderby = in_array( $args['orderby'], $allowed_orderby, true ) ? $args['orderby'] : 'sort_order';
 		$order   = 'DESC' === strtoupper( $args['order'] ) ? 'DESC' : 'ASC';
 
-		$sql = "SELECT * FROM {$this->table} {$where_sql} ORDER BY {$orderby} {$order}";
+		$orderby_sql = 'sort_order' === $orderby ? 't.sort_order' : 't.' . $orderby;
+		$sql         = "SELECT {$this->get_select_columns()}
+			FROM {$this->table} t
+			LEFT JOIN {$this->types_table} qt ON qt.id = t.qualification_type_id
+			{$where_sql}
+			ORDER BY {$orderby_sql} {$order}";
 
 		if ( ! empty( $values ) ) {
 			$sql = $wpdb->prepare( $sql, ...$values );
@@ -160,16 +180,18 @@ class Hlavas_Terms_Repository {
 		/** @var wpdb $wpdb */
 
 		$today      = current_time( 'Y-m-d' );
-		$date_field = 'kurz' === $term_type ? 'date_end' : 'date_start';
 
 		$results = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT * FROM {$this->table}
-				WHERE term_type = %s
-					AND is_active = 1
-					AND is_archived = 0
-					AND {$date_field} >= %s
-				ORDER BY sort_order ASC, date_start ASC",
+				"SELECT {$this->get_select_columns()}
+				FROM {$this->table} t
+				LEFT JOIN {$this->types_table} qt ON qt.id = t.qualification_type_id
+				WHERE t.term_type = %s
+					AND t.is_active = 1
+					AND t.is_visible = 1
+					AND t.is_archived = 0
+					AND COALESCE(t.enrollment_deadline, t.date_start, t.date_end) >= %s
+				ORDER BY t.sort_order ASC, t.date_start ASC",
 				$term_type,
 				$today
 			)
@@ -191,6 +213,10 @@ class Hlavas_Terms_Repository {
 	public function insert( array $data ): int|false {
 		global $wpdb;
 		/** @var wpdb $wpdb */
+
+		if ( empty( $data['qualification_type_id'] ) ) {
+			$data['qualification_type_id'] = 0;
+		}
 
 		$data['created_at'] = current_time( 'mysql' );
 		$data['updated_at'] = current_time( 'mysql' );
@@ -214,6 +240,10 @@ class Hlavas_Terms_Repository {
 	public function update( int $id, array $data ): bool {
 		global $wpdb;
 		/** @var wpdb $wpdb */
+
+		if ( array_key_exists( 'qualification_type_id', $data ) && empty( $data['qualification_type_id'] ) ) {
+			$data['qualification_type_id'] = 0;
+		}
 
 		$data['updated_at'] = current_time( 'mysql' );
 
@@ -275,6 +305,27 @@ class Hlavas_Terms_Repository {
 	 */
 	public function bulk_archive( array $ids ): int {
 		return $this->bulk_update_field( $ids, 'is_archived', 1 );
+	}
+
+	/**
+	 * Toggle front-end visibility.
+	 *
+	 * @param int $id Term ID.
+	 * @return bool
+	 */
+	public function toggle_visibility( int $id ): bool {
+		$term = $this->find( $id );
+
+		if ( ! $term ) {
+			return false;
+		}
+
+		return $this->update(
+			$id,
+			[
+				'is_visible' => empty( $term->is_visible ) ? 1 : 0,
+			]
+		);
 	}
 
 	/**
@@ -346,7 +397,9 @@ class Hlavas_Terms_Repository {
 	 */
 	private function get_formats( array $data ): array {
 		$int_columns = [
+			'qualification_type_id',
 			'capacity',
+			'is_visible',
 			'is_active',
 			'is_archived',
 			'sort_order',
@@ -362,6 +415,19 @@ class Hlavas_Terms_Repository {
 	}
 
 	/**
+	 * Get select columns enriched by qualification type data.
+	 *
+	 * @return string
+	 */
+	private function get_select_columns(): string {
+		return "t.*,
+			qt.id AS qualification_id,
+			qt.name AS qualification_name,
+			qt.accreditation_number AS qualification_code,
+			qt.is_accredited AS qualification_is_accredited";
+	}
+
+	/**
 	 * Bulk update a single field for given IDs.
 	 *
 	 * @param array<int> $ids   Term IDs.
@@ -373,7 +439,7 @@ class Hlavas_Terms_Repository {
 		global $wpdb;
 		/** @var wpdb $wpdb */
 
-		$allowed_fields = [ 'is_active', 'is_archived' ];
+		$allowed_fields = [ 'is_active', 'is_archived', 'is_visible' ];
 
 		if ( ! in_array( $field, $allowed_fields, true ) ) {
 			return 0;

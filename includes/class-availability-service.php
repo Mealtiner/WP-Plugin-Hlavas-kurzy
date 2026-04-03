@@ -182,13 +182,17 @@ class Hlavas_Terms_Availability_Service {
             $remaining = max( 0, (int) $term->capacity - $enrolled );
 
             $report[] = [
-                'id'        => (int) $term->id,
-                'term_key'  => $term->term_key,
-                'label'     => $term->label,
-                'type'      => $term->term_type,
-                'capacity'  => (int) $term->capacity,
-                'enrolled'  => $enrolled,
-                'remaining' => $remaining,
+                'id'            => (int) $term->id,
+                'term_key'      => $term->term_key,
+                'title'         => ! empty( $term->title ) ? $term->title : $term->label,
+                'qualification' => ! empty( $term->qualification_name )
+                    ? trim( ( ! empty( $term->qualification_code ) ? $term->qualification_code . ' – ' : '' ) . $term->qualification_name )
+                    : 'Bez návaznosti',
+                'label'         => $term->label,
+                'type'          => $term->term_type,
+                'capacity'      => (int) $term->capacity,
+                'enrolled'      => $enrolled,
+                'remaining'     => $remaining,
             ];
         }
 

@@ -11,15 +11,15 @@ if ( ! defined( 'ABSPATH' ) ) exit;
     <?php else : ?>
 
     <h2>Kurzy</h2>
-    <table class="widefat fixed striped" style="max-width: 800px;">
+    <table class="widefat striped hlavas-availability-table">
         <thead>
             <tr>
-                <th>Label</th>
-                <th>Klíč</th>
+                <th class="column-qualification">Kvalifikace</th>
+                <th class="column-term">Termín</th>
                 <th style="width:90px;">Kapacita</th>
                 <th style="width:90px;">Přihlášeno</th>
                 <th style="width:90px;">Zbývá</th>
-                <th style="width:120px;">Stav</th>
+                <th class="column-status">Obsazení</th>
             </tr>
         </thead>
         <tbody>
@@ -33,22 +33,28 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                     $pct = $r['capacity'] > 0 ? round( $r['enrolled'] / $r['capacity'] * 100 ) : 0;
             ?>
             <tr>
-                <td><strong><?php echo esc_html( $r['label'] ); ?></strong></td>
-                <td><code><?php echo esc_html( $r['term_key'] ); ?></code></td>
-                <td><?php echo esc_html( $r['capacity'] ); ?></td>
-                <td><?php echo esc_html( $r['enrolled'] ); ?></td>
+                <td class="column-qualification">
+                    <span class="hlavas-qualification-main"><?php echo esc_html( $r['qualification'] ); ?></span>
+                </td>
+                <td class="column-term">
+                    <strong><?php echo esc_html( $r['title'] ); ?></strong>
+                    <div class="hlavas-subline"><?php echo esc_html( $r['label'] ); ?></div>
+                    <code class="hlavas-subline-code"><?php echo esc_html( $r['term_key'] ); ?></code>
+                </td>
+                <td class="column-capacity"><?php echo esc_html( $r['capacity'] ); ?></td>
+                <td class="column-capacity"><?php echo esc_html( $r['enrolled'] ); ?></td>
                 <td>
                     <strong class="<?php echo $r['remaining'] <= 0 ? 'hlavas-status-no' : ''; ?>">
                         <?php echo esc_html( $r['remaining'] ); ?>
                     </strong>
                 </td>
-                <td>
-                    <div class="hlavas-capacity-bar">
+                <td class="column-status">
+                    <div class="hlavas-capacity-bar hlavas-capacity-bar-wide">
                         <div class="hlavas-capacity-fill <?php
                             echo $pct >= 100 ? 'full' : ( $pct >= 75 ? 'high' : '' );
                         ?>" style="width: <?php echo min( 100, $pct ); ?>%;"></div>
                     </div>
-                    <small><?php echo $pct; ?>%</small>
+                    <small class="hlavas-capacity-percent"><?php echo $pct; ?>%</small>
                 </td>
             </tr>
             <?php endforeach; endif; ?>
@@ -56,15 +62,15 @@ if ( ! defined( 'ABSPATH' ) ) exit;
     </table>
 
     <h2>Zkoušky</h2>
-    <table class="widefat fixed striped" style="max-width: 800px;">
+    <table class="widefat striped hlavas-availability-table">
         <thead>
             <tr>
-                <th>Label</th>
-                <th>Klíč</th>
+                <th class="column-qualification">Kvalifikace</th>
+                <th class="column-term">Termín</th>
                 <th style="width:90px;">Kapacita</th>
                 <th style="width:90px;">Přihlášeno</th>
                 <th style="width:90px;">Zbývá</th>
-                <th style="width:120px;">Stav</th>
+                <th class="column-status">Obsazení</th>
             </tr>
         </thead>
         <tbody>
@@ -78,22 +84,28 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                     $pct = $r['capacity'] > 0 ? round( $r['enrolled'] / $r['capacity'] * 100 ) : 0;
             ?>
             <tr>
-                <td><strong><?php echo esc_html( $r['label'] ); ?></strong></td>
-                <td><code><?php echo esc_html( $r['term_key'] ); ?></code></td>
-                <td><?php echo esc_html( $r['capacity'] ); ?></td>
-                <td><?php echo esc_html( $r['enrolled'] ); ?></td>
+                <td class="column-qualification">
+                    <span class="hlavas-qualification-main"><?php echo esc_html( $r['qualification'] ); ?></span>
+                </td>
+                <td class="column-term">
+                    <strong><?php echo esc_html( $r['title'] ); ?></strong>
+                    <div class="hlavas-subline"><?php echo esc_html( $r['label'] ); ?></div>
+                    <code class="hlavas-subline-code"><?php echo esc_html( $r['term_key'] ); ?></code>
+                </td>
+                <td class="column-capacity"><?php echo esc_html( $r['capacity'] ); ?></td>
+                <td class="column-capacity"><?php echo esc_html( $r['enrolled'] ); ?></td>
                 <td>
                     <strong class="<?php echo $r['remaining'] <= 0 ? 'hlavas-status-no' : ''; ?>">
                         <?php echo esc_html( $r['remaining'] ); ?>
                     </strong>
                 </td>
-                <td>
-                    <div class="hlavas-capacity-bar">
+                <td class="column-status">
+                    <div class="hlavas-capacity-bar hlavas-capacity-bar-wide">
                         <div class="hlavas-capacity-fill <?php
                             echo $pct >= 100 ? 'full' : ( $pct >= 75 ? 'high' : '' );
                         ?>" style="width: <?php echo min( 100, $pct ); ?>%;"></div>
                     </div>
-                    <small><?php echo $pct; ?>%</small>
+                    <small class="hlavas-capacity-percent"><?php echo $pct; ?>%</small>
                 </td>
             </tr>
             <?php endforeach; endif; ?>

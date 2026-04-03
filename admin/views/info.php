@@ -25,8 +25,20 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 				<td><a href="<?php echo esc_url( $plugin_info['author_url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $plugin_info['author'] ); ?></a></td>
 			</tr>
 			<tr>
+				<th>E-mail autora</th>
+				<td><a href="mailto:<?php echo esc_attr( $plugin_info['author_email'] ); ?>"><?php echo esc_html( $plugin_info['author_email'] ); ?></a></td>
+			</tr>
+			<tr>
+				<th>Zadavatel / organizace</th>
+				<td><?php echo esc_html( $plugin_info['organization'] ); ?></td>
+			</tr>
+			<tr>
+				<th>E-mail organizace</th>
+				<td><a href="mailto:<?php echo esc_attr( $plugin_info['organization_email'] ); ?>"><?php echo esc_html( $plugin_info['organization_email'] ); ?></a></td>
+			</tr>
+			<tr>
 				<th>Projekt / URL</th>
-				<td><a href="<?php echo esc_url( $plugin_info['plugin_url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $plugin_info['plugin_url'] ); ?></a></td>
+				<td><a href="<?php echo esc_url( $plugin_info['plugin_url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $plugin_info['plugin_url'] ); ?></a> <span class="description">nasazený web</span></td>
 			</tr>
 			<tr>
 				<th>Licence</th>
@@ -43,6 +55,10 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 			<tr>
 				<th>Databázová tabulka</th>
 				<td><code><?php echo esc_html( $plugin_info['table'] ); ?></code></td>
+			</tr>
+			<tr>
+				<th>Tabulka typů kvalifikací</th>
+				<td><code><?php echo esc_html( $plugin_info['types_table'] ); ?></code></td>
 			</tr>
 			<tr>
 				<th>Napojený Fluent Forms formulář</th>
