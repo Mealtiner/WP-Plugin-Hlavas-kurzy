@@ -22,14 +22,20 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
     <div class="hlavas-sync-info">
         <p>
-            Formulář ID: <strong><?php echo HLAVAS_TERMS_FLUENT_FORM_ID; ?></strong>
+            Formulář ID: <strong><?php echo esc_html( hlavas_terms_get_form_id() ); ?></strong>
             &nbsp;|&nbsp;
             Formulář nalezen: <strong><?php echo $preview['form_found'] ? '✓ Ano' : '✗ NE'; ?></strong>
+            &nbsp;|&nbsp;
+            Debug režim: <strong><?php echo hlavas_terms_is_debug_enabled() ? 'Zapnuto' : 'Vypnuto'; ?></strong>
+        </p>
+        <p class="description">
+            Cílový formulář i debug režim můžete upravit v
+            <a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-settings' ) ); ?>">nastavení pluginu</a>.
         </p>
 
         <?php if ( ! $preview['form_found'] ) : ?>
             <div class="notice notice-error">
-                <p>Formulář s ID <?php echo HLAVAS_TERMS_FLUENT_FORM_ID; ?> nebyl nalezen. Zkontrolujte, zda existuje ve Fluent Forms.</p>
+                <p>Formulář s ID <?php echo esc_html( hlavas_terms_get_form_id() ); ?> nebyl nalezen. Zkontrolujte, zda existuje ve Fluent Forms.</p>
             </div>
         <?php else : ?>
 

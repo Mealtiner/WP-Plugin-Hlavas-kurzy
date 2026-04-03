@@ -2,95 +2,126 @@
 /**
  * Submit validator: hooks into Fluent Forms submission to validate capacity.
  *
- * This is the Varianta B fallback – if Fluent Forms inventory does not
- * correctly enforce capacity (e.g., after migration to term_key values),
- * this validator provides a server-side safety net.
+ * This is the server-side safety net – if Fluent Forms inventory does not
+ * correctly enforce capacity, this validator prevents overbooking.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
-    exit;
+	exit;
+}
+
+if ( ! class_exists( 'Hlavas_Terms_Repository', false ) ) {
+	require_once __DIR__ . '/class-repository.php';
+}
+
+if ( ! class_exists( 'Hlavas_Terms_Availability_Service', false ) ) {
+	require_once __DIR__ . '/class-availability-service.php';
 }
 
 class Hlavas_Terms_Submit_Validator {
 
-    private Hlavas_Terms_Availability_Service $availability;
+	/**
+	 * Availability service.
+	 *
+	 * @var Hlavas_Terms_Availability_Service
+	 */
+	private Hlavas_Terms_Availability_Service $availability;
 
-    public function __construct( ?Hlavas_Terms_Availability_Service $availability = null ) {
-        $this->availability = $availability ?? new Hlavas_Terms_Availability_Service();
-    }
+	/**
+	 * Repository.
+	 *
+	 * @var Hlavas_Terms_Repository
+	 */
+	private Hlavas_Terms_Repository $repo;
 
-    /**
-     * Register the validation hook.
-     */
-    public function register(): void {
-        // Hook into Fluent Forms validation before submission is saved.
-        // The filter 'fluentform/validation_errors' is called for all forms.
-        add_filter( 'fluentform/validation_errors', [ $this, 'validate' ], 20, 4 );
-    }
+	/**
+	 * Constructor.
+	 *
+	 * @param Hlavas_Terms_Availability_Service|null $availability Availability service.
+	 * @param Hlavas_Terms_Repository|null           $repo Repository.
+	 */
+	public function __construct(
+		?Hlavas_Terms_Availability_Service $availability = null,
+		?Hlavas_Terms_Repository $repo = null
+	) {
+		$this->availability = $availability ?? new Hlavas_Terms_Availability_Service();
+		$this->repo         = $repo ?? new Hlavas_Terms_Repository();
+	}
 
-    /**
-     * Validate capacity on form submission.
-     *
-     * @param array  $errors    Existing validation errors.
-     * @param array  $data      Submitted form data.
-     * @param object $form      The form object.
-     * @param array  $fields    Form field definitions.
-     * @return array Modified errors array.
-     */
-    public function validate( array $errors, array $data, object $form, array $fields ): array {
-        // Only validate our form
-        if ( (int) $form->id !== HLAVAS_TERMS_FLUENT_FORM_ID ) {
-            return $errors;
-        }
+	/**
+	 * Register validation hook.
+	 *
+	 * @return void
+	 */
+	public function register(): void {
+		add_filter( 'fluentform/validation_errors', [ $this, 'validate' ], 20, 4 );
+	}
 
-        // Check termin_kurz
-        if ( ! empty( $data['termin_kurz'] ) ) {
-            $term_value = sanitize_text_field( $data['termin_kurz'] );
-            if ( ! $this->check_capacity( $term_value ) ) {
-                $errors['termin_kurz'] = [
-                    'Tento termín kurzu je bohužel již plně obsazen. Vyberte prosím jiný termín.',
-                ];
-            }
-        }
+	/**
+	 * Validate capacity on form submission.
+	 *
+	 * @param array  $errors Existing validation errors.
+	 * @param array  $data Submitted form data.
+	 * @param object $form Fluent form object.
+	 * @param array  $fields Form field definitions.
+	 * @return array
+	 */
+	public function validate( array $errors, array $data, object $form, array $fields ): array {
+		unset( $fields );
 
-        // Check termin_zkouska
-        if ( ! empty( $data['termin_zkouska'] ) ) {
-            $term_value = sanitize_text_field( $data['termin_zkouska'] );
-            if ( ! $this->check_capacity( $term_value ) ) {
-                $errors['termin_zkouska'] = [
-                    'Tento termín zkoušky je bohužel již plně obsazen. Vyberte prosím jiný termín.',
-                ];
-            }
-        }
+		if ( (int) $form->id !== hlavas_terms_get_form_id() ) {
+			return $errors;
+		}
 
-        return $errors;
-    }
+		$map = [
+			'termin_kurz'    => 'Tento termín kurzu je bohužel již plně obsazen. Vyberte prosím jiný termín.',
+			'termin_zkouska' => 'Tento termín zkoušky je bohužel již plně obsazen. Vyberte prosím jiný termín.',
+		];
 
-    /**
-     * Check if a term value (term_key or label) still has capacity.
-     */
-    private function check_capacity( string $value ): bool {
-        $repo = new Hlavas_Terms_Repository();
+		foreach ( $map as $field_name => $message ) {
+			if ( empty( $data[ $field_name ] ) ) {
+				continue;
+			}
 
-        // Try to find by term_key first
-        $term = $repo->find_by_key( $value );
+			$term_value = sanitize_text_field( $data[ $field_name ] );
 
-        if ( ! $term ) {
-            // Maybe it's a legacy label value – search all terms
-            $all_terms = $repo->get_all();
-            foreach ( $all_terms as $t ) {
-                if ( $t->label === $value ) {
-                    $term = $t;
-                    break;
-                }
-            }
-        }
+			if ( ! $this->check_capacity( $term_value ) ) {
+				$errors[ $field_name ] = [ $message ];
+			}
+		}
 
-        if ( ! $term ) {
-            // Unknown term value – let it pass (don't block unknown entries)
-            return true;
-        }
+		return $errors;
+	}
 
-        return $this->availability->is_available( $term->term_key );
-    }
+	/**
+	 * Check whether a selected term still has capacity.
+	 *
+	 * Accepts either:
+	 * - current value = term_key
+	 * - legacy value  = label
+	 *
+	 * @param string $value Submitted value.
+	 * @return bool
+	 */
+	private function check_capacity( string $value ): bool {
+		$term = $this->repo->find_by_key( $value );
+
+		if ( ! $term ) {
+			$all_terms = $this->repo->get_all();
+
+			foreach ( $all_terms as $candidate ) {
+				if ( isset( $candidate->label ) && $candidate->label === $value ) {
+					$term = $candidate;
+					break;
+				}
+			}
+		}
+
+		if ( ! $term || empty( $term->term_key ) ) {
+			// Unknown submitted value – do not block submission here.
+			return true;
+		}
+
+		return $this->availability->is_available( $term->term_key );
+	}
 }

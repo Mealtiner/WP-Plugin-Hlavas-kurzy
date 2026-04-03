@@ -11,7 +11,21 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+if ( ! class_exists( 'Hlavas_Terms_Repository', false ) ) {
+	require_once __DIR__ . '/class-repository.php';
+}
+
 class Hlavas_Terms_Availability_Service {
+
+    /**
+     * Supported Fluent Forms field names that carry term selections.
+     *
+     * @var array<int, string>
+     */
+    private const TERM_FIELDS = [
+        'termin_kurz',
+        'termin_zkouska',
+    ];
 
     private Hlavas_Terms_Repository $repo;
 
@@ -30,12 +44,14 @@ class Hlavas_Terms_Availability_Service {
      */
     public function count_enrollments( string $term_key ): int {
         global $wpdb;
+        /** @var wpdb $wpdb */
 
-        $entry_table      = $wpdb->prefix . 'fluentform_entry_details';
+        $entry_table       = $wpdb->prefix . 'fluentform_entry_details';
         $submission_table  = $wpdb->prefix . 'fluentform_submissions';
+        $form_id           = hlavas_terms_get_form_id();
 
         // Also check legacy label value for backward compatibility
-        $term = $this->repo->find_by_key( $term_key );
+        $term            = $this->repo->find_by_key( $term_key );
         $values_to_check = [ $term_key ];
 
         if ( $term && $term->label ) {
@@ -43,24 +59,32 @@ class Hlavas_Terms_Availability_Service {
         }
 
         $placeholders = implode( ',', array_fill( 0, count( $values_to_check ), '%s' ) );
+        $field_names  = implode( "', '", self::TERM_FIELDS );
 
         // Count entries that:
-        // 1. Belong to form ID 3
+        // 1. Belong to the configured Fluent Form
         // 2. Have field_name 'termin_kurz' or 'termin_zkouska'
         // 3. Have field_value matching our term_key or legacy label
         // 4. The parent submission is not trashed
-        $sql = $wpdb->prepare(
+        $primary = (int) $wpdb->get_var(
+            $wpdb->prepare(
             "SELECT COUNT(DISTINCT e.submission_id) FROM {$entry_table} e
              INNER JOIN {$submission_table} s ON e.submission_id = s.id
              WHERE e.form_id = %d
-               AND e.field_name IN ('termin_kurz', 'termin_zkouska')
+               AND e.field_name IN ('{$field_names}')
                AND e.field_value IN ({$placeholders})
                AND s.status != 'trashed'",
-            HLAVAS_TERMS_FLUENT_FORM_ID,
+                $form_id,
             ...$values_to_check
+            )
         );
 
-        return (int) $wpdb->get_var( $sql );
+        if ( $primary > 0 ) {
+            return $primary;
+        }
+
+        // Some Fluent Forms setups do not fully populate entry_details for choice fields.
+        return $this->count_enrollments_from_responses( $term_key );
     }
 
     /**
@@ -71,21 +95,25 @@ class Hlavas_Terms_Availability_Service {
      */
     public function count_enrollments_from_responses( string $term_key ): int {
         global $wpdb;
+        /** @var wpdb $wpdb */
 
         $submission_table = $wpdb->prefix . 'fluentform_submissions';
+        $form_id          = hlavas_terms_get_form_id();
 
-        $term = $this->repo->find_by_key( $term_key );
+        $term            = $this->repo->find_by_key( $term_key );
         $values_to_check = [ $term_key ];
         if ( $term && $term->label ) {
             $values_to_check[] = $term->label;
         }
 
-        // Query all non-trashed submissions for form 3
-        $submissions = $wpdb->get_results( $wpdb->prepare(
-            "SELECT response FROM {$submission_table}
+        // Query all non-trashed submissions for the configured form.
+        $submissions = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT response FROM {$submission_table}
              WHERE form_id = %d AND status != 'trashed'",
-            HLAVAS_TERMS_FLUENT_FORM_ID
-        ) );
+                $form_id
+            )
+        );
 
         $count = 0;
         foreach ( $submissions as $sub ) {
@@ -95,12 +123,13 @@ class Hlavas_Terms_Availability_Service {
             }
 
             // Check both field names
-            $val_kurz    = $response['termin_kurz'] ?? '';
-            $val_zkouska = $response['termin_zkouska'] ?? '';
+            foreach ( self::TERM_FIELDS as $field_name ) {
+                $value = $response[ $field_name ] ?? '';
 
-            if ( in_array( $val_kurz, $values_to_check, true ) ||
-                 in_array( $val_zkouska, $values_to_check, true ) ) {
-                $count++;
+                if ( in_array( $value, $values_to_check, true ) ) {
+                    $count++;
+                    break;
+                }
             }
         }
 

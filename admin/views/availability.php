@@ -105,6 +105,6 @@ if ( ! defined( 'ABSPATH' ) ) exit;
     <hr>
     <p class="description">
         Počet přihlášených se počítá z odeslaných formulářů (Fluent Forms entries) pro formulář
-        ID <?php echo HLAVAS_TERMS_FLUENT_FORM_ID; ?>. Smazané (trashed) záznamy se nepočítají.
+        ID <?php echo esc_html( hlavas_terms_get_form_id() ); ?>. Smazané (trashed) záznamy se nepočítají.
     </p>
 </div>

@@ -1,0 +1,6 @@
+{
+	"intelephense.environment.phpVersion": "8.4.0",
+	"intelephense.environment.includePaths": [
+		"..\\..\\.."
+	]
+}

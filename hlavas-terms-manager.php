@@ -17,82 +17,197 @@
 // Zadavatel / projektový rámec: Jihomoravská rada dětí a mládeže (JRDM)
 
 if ( ! defined( 'ABSPATH' ) ) {
-    exit;
+	exit;
 }
 
-// Plugin constants
-define( 'HLAVAS_TERMS_VERSION', '1.0.0' );
+/**
+ * Plugin constants.
+ */
+define( 'HLAVAS_TERMS_VERSION', '1.0.1' );
 define( 'HLAVAS_TERMS_FILE', __FILE__ );
 define( 'HLAVAS_TERMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HLAVAS_TERMS_URL', plugin_dir_url( __FILE__ ) );
 define( 'HLAVAS_TERMS_TABLE', 'hlavas_terms' );
-define( 'HLAVAS_TERMS_FLUENT_FORM_ID', 3 );
+define( 'HLAVAS_TERMS_OPTION_FORM_ID', 'hlavas_terms_fluent_form_id' );
+define( 'HLAVAS_TERMS_OPTION_DEBUG_MODE', 'hlavas_terms_debug_mode' );
+define( 'HLAVAS_TERMS_DEFAULT_FORM_ID', 3 );
+define( 'HLAVAS_TERMS_PLUGIN_NAME', 'HLAVAS – Správa termínů kurzů a zkoušek' );
+define( 'HLAVAS_TERMS_PLUGIN_SLUG', 'hlavas-terms' );
+define( 'HLAVAS_TERMS_AUTHOR', 'Michal "Mealtiner" Truhlář pro JRDM / HLAVAS.cz' );
+define( 'HLAVAS_TERMS_AUTHOR_URL', 'https://mealtiner.cz' );
+define( 'HLAVAS_TERMS_PLUGIN_URL', 'https://hlavas.cz' );
+define( 'HLAVAS_TERMS_LICENSE', 'GPL v2 or later' );
+define( 'HLAVAS_TERMS_MIN_PHP', '8.4' );
+define( 'HLAVAS_TERMS_MIN_WP', '6.0' );
 
 /**
- * Autoload plugin classes.
+ * Returns the full plugin table name including WP prefix.
+ *
+ * @return string
  */
-spl_autoload_register( function ( string $class ) {
-    $prefix    = 'Hlavas_Terms_';
-    $base_dir  = HLAVAS_TERMS_DIR . 'includes/';
+function hlavas_terms_get_table_name(): string {
+	global $wpdb;
+	/** @var wpdb $wpdb */
 
-    if ( strpos( $class, $prefix ) !== 0 ) {
-        return;
-    }
-
-    $relative = substr( $class, strlen( $prefix ) );
-    $file     = $base_dir . 'class-' . strtolower( str_replace( '_', '-', $relative ) ) . '.php';
-
-    if ( file_exists( $file ) ) {
-        require_once $file;
-    }
-});
+	return $wpdb->prefix . HLAVAS_TERMS_TABLE;
+}
 
 /**
- * Plugin activation.
+ * Returns Fluent Forms form ID from plugin settings.
+ * Falls back to default if not yet configured.
+ *
+ * @return int
+ */
+function hlavas_terms_get_form_id(): int {
+	$form_id = (int) get_option( HLAVAS_TERMS_OPTION_FORM_ID, HLAVAS_TERMS_DEFAULT_FORM_ID );
+
+	return $form_id > 0 ? $form_id : HLAVAS_TERMS_DEFAULT_FORM_ID;
+}
+
+/**
+ * Returns whether plugin debug mode is enabled.
+ *
+ * @return bool
+ */
+function hlavas_terms_is_debug_enabled(): bool {
+	return (bool) get_option( HLAVAS_TERMS_OPTION_DEBUG_MODE, false );
+}
+
+/**
+ * Returns plugin metadata for admin info page.
+ *
+ * @return array<string, string>
+ */
+function hlavas_terms_get_plugin_info(): array {
+	return [
+		'name'             => HLAVAS_TERMS_PLUGIN_NAME,
+		'slug'             => HLAVAS_TERMS_PLUGIN_SLUG,
+		'version'          => HLAVAS_TERMS_VERSION,
+		'plugin_url'       => HLAVAS_TERMS_PLUGIN_URL,
+		'author'           => HLAVAS_TERMS_AUTHOR,
+		'author_url'       => HLAVAS_TERMS_AUTHOR_URL,
+		'license'          => HLAVAS_TERMS_LICENSE,
+		'text_domain'      => 'hlavas-terms',
+		'table'            => hlavas_terms_get_table_name(),
+		'min_php'          => HLAVAS_TERMS_MIN_PHP,
+		'min_wp'           => HLAVAS_TERMS_MIN_WP,
+		'current_php'      => PHP_VERSION,
+		'current_wp'       => get_bloginfo( 'version' ),
+		'configured_form'  => (string) hlavas_terms_get_form_id(),
+		'debug_mode'       => hlavas_terms_is_debug_enabled() ? 'Zapnuto' : 'Vypnuto',
+		'plugin_file'      => HLAVAS_TERMS_FILE,
+		'plugin_directory' => HLAVAS_TERMS_DIR,
+	];
+}
+
+/**
+ * Autoload plugin classes from /includes.
+ */
+spl_autoload_register(
+	function ( string $class ): void {
+		$prefix   = 'Hlavas_Terms_';
+		$base_dir = HLAVAS_TERMS_DIR . 'includes/';
+
+		if ( strpos( $class, $prefix ) !== 0 ) {
+			return;
+		}
+
+		$relative_class = substr( $class, strlen( $prefix ) );
+		$file           = $base_dir . 'class-' . strtolower( str_replace( '_', '-', $relative_class ) ) . '.php';
+
+		if ( file_exists( $file ) ) {
+			require_once $file;
+		}
+	}
+);
+
+/**
+ * Runs on plugin activation.
+ *
+ * @return void
  */
 function hlavas_terms_activate(): void {
-    require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
-    Hlavas_Terms_Activator::activate();
+	require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
+	Hlavas_Terms_Activator::activate();
 }
 register_activation_hook( __FILE__, 'hlavas_terms_activate' );
 
 /**
- * Plugin deactivation.
+ * Runs on plugin deactivation.
+ *
+ * @return void
  */
 function hlavas_terms_deactivate(): void {
-    // Clean up transients if needed
-    delete_transient( 'hlavas_terms_sync_preview' );
+	delete_transient( 'hlavas_terms_sync_preview' );
 }
 register_deactivation_hook( __FILE__, 'hlavas_terms_deactivate' );
 
 /**
- * Initialize plugin after plugins are loaded (so Fluent Forms is available).
+ * Loads plugin textdomain.
+ *
+ * @return void
  */
-add_action( 'plugins_loaded', function () {
-    // Load text domain
-    load_plugin_textdomain( 'hlavas-terms', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
+function hlavas_terms_load_textdomain(): void {
+	load_plugin_textdomain(
+		'hlavas-terms',
+		false,
+		dirname( plugin_basename( __FILE__ ) ) . '/languages'
+	);
+}
 
-    // Check DB version and upgrade if needed
-    $db_version = get_option( 'hlavas_terms_db_version', '0' );
-    if ( version_compare( $db_version, HLAVAS_TERMS_VERSION, '<' ) ) {
-        require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
-        Hlavas_Terms_Activator::activate();
-    }
+/**
+ * Runs database upgrade routine if needed.
+ *
+ * @return void
+ */
+function hlavas_terms_maybe_upgrade_db(): void {
+	$db_version = get_option( 'hlavas_terms_db_version', '0' );
 
-    // Boot core classes
-    require_once HLAVAS_TERMS_DIR . 'includes/class-repository.php';
-    require_once HLAVAS_TERMS_DIR . 'includes/class-label-builder.php';
-    require_once HLAVAS_TERMS_DIR . 'includes/class-fluent-sync-service.php';
-    require_once HLAVAS_TERMS_DIR . 'includes/class-availability-service.php';
-    require_once HLAVAS_TERMS_DIR . 'includes/class-submit-validator.php';
+	if ( version_compare( $db_version, HLAVAS_TERMS_VERSION, '<' ) ) {
+		require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
+		Hlavas_Terms_Activator::activate();
+	}
+}
 
-    // Boot admin
-    if ( is_admin() ) {
-        require_once HLAVAS_TERMS_DIR . 'admin/class-admin.php';
-        new Hlavas_Terms_Admin();
-    }
+/**
+ * Boots admin classes.
+ *
+ * @return void
+ */
+function hlavas_terms_boot_admin(): void {
+	if ( ! is_admin() ) {
+		return;
+	}
 
-    // Register submission validation hook (frontend + admin AJAX)
-    $validator = new Hlavas_Terms_Submit_Validator();
-    $validator->register();
-});
+	require_once HLAVAS_TERMS_DIR . 'admin/class-admin.php';
+	new Hlavas_Terms_Admin();
+}
+
+/**
+ * Boots shared/frontend services.
+ *
+ * @return void
+ */
+function hlavas_terms_boot_services(): void {
+	require_once HLAVAS_TERMS_DIR . 'includes/class-repository.php';
+	require_once HLAVAS_TERMS_DIR . 'includes/class-label-builder.php';
+	require_once HLAVAS_TERMS_DIR . 'includes/class-fluent-sync-service.php';
+	require_once HLAVAS_TERMS_DIR . 'includes/class-availability-service.php';
+	require_once HLAVAS_TERMS_DIR . 'includes/class-submit-validator.php';
+
+	$validator = new Hlavas_Terms_Submit_Validator();
+	$validator->register();
+}
+
+/**
+ * Main plugin bootstrap.
+ *
+ * @return void
+ */
+function hlavas_terms_init(): void {
+	hlavas_terms_load_textdomain();
+	hlavas_terms_maybe_upgrade_db();
+	hlavas_terms_boot_admin();
+	hlavas_terms_boot_services();
+}
+add_action( 'plugins_loaded', 'hlavas_terms_init' );
