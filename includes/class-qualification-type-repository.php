@@ -45,7 +45,33 @@ class Hlavas_Terms_Qualification_Type_Repository {
 				SELECT COUNT(*)
 				FROM {$this->terms_table} term
 				WHERE term.qualification_type_id = t.id
-			) AS linked_terms
+			) AS linked_terms,
+			(
+				SELECT COUNT(*)
+				FROM {$this->terms_table} term
+				WHERE term.qualification_type_id = t.id
+					AND term.term_type = 'kurz'
+			) AS total_course_terms,
+			(
+				SELECT COUNT(*)
+				FROM {$this->terms_table} term
+				WHERE term.qualification_type_id = t.id
+					AND term.term_type = 'kurz'
+					AND COALESCE(term.enrollment_deadline, term.date_start, term.date_end) >= CURDATE()
+			) AS future_course_terms,
+			(
+				SELECT COUNT(*)
+				FROM {$this->terms_table} term
+				WHERE term.qualification_type_id = t.id
+					AND term.term_type = 'zkouska'
+			) AS total_exam_terms,
+			(
+				SELECT COUNT(*)
+				FROM {$this->terms_table} term
+				WHERE term.qualification_type_id = t.id
+					AND term.term_type = 'zkouska'
+					AND COALESCE(term.enrollment_deadline, term.date_start, term.date_end) >= CURDATE()
+			) AS future_exam_terms
 			FROM {$this->table} t
 			ORDER BY t.sort_order ASC, t.name ASC";
 

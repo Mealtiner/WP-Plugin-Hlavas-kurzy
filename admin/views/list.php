@@ -1,209 +1,272 @@
 <?php
-if ( ! defined( 'ABSPATH' ) ) exit;
-/** @var array $terms */
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+/** @var array<int, object> $terms */
 /** @var string $message */
-/** @var array $filters */
+/** @var string $report_message */
+/** @var array<string, mixed> $filters */
+/** @var array<string, string> $sync_log */
+
+$current_page   = sanitize_key( (string) ( $_GET['page'] ?? 'hlavas-terms' ) );
+$report_actions = in_array( $current_page, [ 'hlavas-terms-kurzy', 'hlavas-terms-zkousky' ], true );
+$report_args    = [
+	'page' => $current_page,
+];
+
+if ( isset( $_GET['filter_active'] ) && '' !== (string) $_GET['filter_active'] ) {
+	$report_args['filter_active'] = sanitize_text_field( wp_unslash( $_GET['filter_active'] ) );
+}
+
+if ( isset( $_GET['filter_archived'] ) && '' !== (string) $_GET['filter_archived'] ) {
+	$report_args['filter_archived'] = sanitize_text_field( wp_unslash( $_GET['filter_archived'] ) );
+}
+
+if ( isset( $_GET['filter_future'] ) && '1' === (string) $_GET['filter_future'] ) {
+	$report_args['filter_future'] = '1';
+}
 ?>
 <div class="wrap hlavas-terms-wrap">
-    <h1 class="wp-heading-inline">
-        <?php
-        $type_label = $filters['term_type'] ?? null;
-        if ( $type_label === 'kurz' ) {
-            echo 'Termíny kurzů';
-        } elseif ( $type_label === 'zkouska' ) {
-            echo 'Termíny zkoušek';
-        } else {
-            echo 'Správa termínů';
-        }
-        ?>
-    </h1>
-    <a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit' ) ); ?>" class="page-title-action">Přidat termín</a>
-    <hr class="wp-header-end">
+	<h1 class="wp-heading-inline">
+		<?php
+		$type_label = $filters['term_type'] ?? null;
+		if ( 'kurz' === $type_label ) {
+			echo 'Termíny kurzů';
+		} elseif ( 'zkouska' === $type_label ) {
+			echo 'Termíny zkoušek';
+		} else {
+			echo 'Správa termínů';
+		}
+		?>
+	</h1>
+	<a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit' ) ); ?>" class="page-title-action">Přidat termín</a>
+	<hr class="wp-header-end">
 
-    <?php if ( $message === 'deleted' ) : ?>
-        <div class="notice notice-success is-dismissible"><p>Termín byl smazán.</p></div>
-    <?php elseif ( $message === 'saved' ) : ?>
-        <div class="notice notice-success is-dismissible"><p>Termín byl uložen.</p></div>
-    <?php elseif ( $message === 'bulk_done' ) : ?>
-        <div class="notice notice-success is-dismissible"><p>Hromadná akce byla provedena.</p></div>
-    <?php elseif ( $message === 'visibility_changed' ) : ?>
-        <div class="notice notice-success is-dismissible"><p>Viditelnost termínu na webu byla změněna.</p></div>
-    <?php endif; ?>
+	<?php if ( 'deleted' === $message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Termín byl smazán.</p></div>
+	<?php elseif ( 'saved' === $message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Termín byl uložen.</p></div>
+	<?php elseif ( 'bulk_done' === $message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Hromadná akce byla provedena.</p></div>
+	<?php elseif ( 'visibility_changed' === $message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Viditelnost termínu na webu byla změněna.</p></div>
+	<?php elseif ( 'synced_to_ff' === $message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Termín byl synchronizován do Fluent Forms.</p></div>
+	<?php endif; ?>
 
-    <!-- Filters -->
-    <form method="get" class="hlavas-filters">
-        <input type="hidden" name="page" value="<?php echo esc_attr( $_GET['page'] ?? 'hlavas-terms' ); ?>">
+	<?php if ( 'emailed' === $report_message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Report byl odeslán na e-mail <?php echo esc_html( hlavas_terms_get_report_email() ); ?>.</p></div>
+	<?php elseif ( 'email_failed' === $report_message ) : ?>
+		<div class="notice notice-error is-dismissible"><p>Report se nepodařilo odeslat. Zkontroluj e-mail pro reporty v nastavení pluginu.</p></div>
+	<?php elseif ( 'report_failed' === $report_message ) : ?>
+		<div class="notice notice-error is-dismissible"><p>Report se nepodařilo vygenerovat.</p></div>
+	<?php endif; ?>
 
-        <?php if ( ! isset( $filters['term_type'] ) || $filters['term_type'] === null ) : ?>
-        <label>
-            Typ:
-            <select name="filter_type">
-                <option value="">Vše</option>
-                <option value="kurz" <?php selected( $_GET['filter_type'] ?? '', 'kurz' ); ?>>Kurz</option>
-                <option value="zkouska" <?php selected( $_GET['filter_type'] ?? '', 'zkouska' ); ?>>Zkouška</option>
-            </select>
-        </label>
-        <?php endif; ?>
+	<form method="get" class="hlavas-filters">
+		<input type="hidden" name="page" value="<?php echo esc_attr( $current_page ); ?>">
 
-        <label>
-            Aktivní:
-            <select name="filter_active">
-                <option value="">Vše</option>
-                <option value="1" <?php selected( $_GET['filter_active'] ?? '', '1' ); ?>>Aktivní</option>
-                <option value="0" <?php selected( $_GET['filter_active'] ?? '', '0' ); ?>>Neaktivní</option>
-            </select>
-        </label>
+		<?php if ( ! isset( $filters['term_type'] ) || null === $filters['term_type'] ) : ?>
+			<label>
+				Typ:
+				<select name="filter_type">
+					<option value="">Vše</option>
+					<option value="kurz" <?php selected( $_GET['filter_type'] ?? '', 'kurz' ); ?>>Kurz</option>
+					<option value="zkouska" <?php selected( $_GET['filter_type'] ?? '', 'zkouska' ); ?>>Zkouška</option>
+				</select>
+			</label>
+		<?php endif; ?>
 
-        <label>
-            Archivováno:
-            <select name="filter_archived">
-                <option value="">Vše</option>
-                <option value="0" <?php selected( $_GET['filter_archived'] ?? '', '0' ); ?>>Nearchivované</option>
-                <option value="1" <?php selected( $_GET['filter_archived'] ?? '', '1' ); ?>>Archivované</option>
-            </select>
-        </label>
+		<label>
+			Aktivní:
+			<select name="filter_active">
+				<option value="">Vše</option>
+				<option value="1" <?php selected( $_GET['filter_active'] ?? '', '1' ); ?>>Aktivní</option>
+				<option value="0" <?php selected( $_GET['filter_active'] ?? '', '0' ); ?>>Neaktivní</option>
+			</select>
+		</label>
 
-        <label>
-            <input type="checkbox" name="filter_future" value="1" <?php checked( $_GET['filter_future'] ?? '', '1' ); ?>>
-            Jen budoucí
-        </label>
+		<label>
+			Archivováno:
+			<select name="filter_archived">
+				<option value="">Vše</option>
+				<option value="0" <?php selected( $_GET['filter_archived'] ?? '', '0' ); ?>>Nearchivované</option>
+				<option value="1" <?php selected( $_GET['filter_archived'] ?? '', '1' ); ?>>Archivované</option>
+			</select>
+		</label>
 
-        <button type="submit" class="button">Filtrovat</button>
-    </form>
+		<label>
+			<input type="checkbox" name="filter_future" value="1" <?php checked( $_GET['filter_future'] ?? '', '1' ); ?>>
+			Jen budoucí
+		</label>
 
-    <!-- Bulk Actions Form -->
-    <form method="post">
-        <?php wp_nonce_field( 'hlavas_bulk', '_hlavas_bulk_nonce' ); ?>
+		<button type="submit" class="button">Filtrovat</button>
+	</form>
 
-        <div class="tablenav top">
-            <div class="alignleft actions bulkactions">
-                <select name="bulk_action">
-                    <option value="">Hromadné akce</option>
-                    <option value="activate">Aktivovat</option>
-                    <option value="deactivate">Deaktivovat</option>
-                    <option value="archive">Archivovat</option>
-                    <option value="regenerate_labels">Přegenerovat label</option>
-                    <option value="sync">Synchronizovat vybrané</option>
-                    <option value="delete">Smazat</option>
-                </select>
-                <button type="submit" name="hlavas_bulk_action" value="1" class="button action">Použít</button>
-            </div>
-            <div class="tablenav-pages">
-                <span class="displaying-num"><?php echo count( $terms ); ?> položek</span>
-            </div>
-        </div>
+	<?php if ( $report_actions ) : ?>
+		<div class="hlavas-report-actions">
+			<a
+				href="<?php echo esc_url( wp_nonce_url( add_query_arg( array_merge( $report_args, [ 'hlavas_report_action' => 'download', 'report_format' => 'csv' ] ), admin_url( 'admin.php' ) ), 'hlavas_report_action', '_hlavas_report_nonce' ) ); ?>"
+				class="button"
+			>Download CSV</a>
+			<a
+				href="<?php echo esc_url( wp_nonce_url( add_query_arg( array_merge( $report_args, [ 'hlavas_report_action' => 'download', 'report_format' => 'xls' ] ), admin_url( 'admin.php' ) ), 'hlavas_report_action', '_hlavas_report_nonce' ) ); ?>"
+				class="button"
+			>Download XLS</a>
+			<a
+				href="<?php echo esc_url( wp_nonce_url( add_query_arg( array_merge( $report_args, [ 'hlavas_report_action' => 'print' ] ), admin_url( 'admin.php' ) ), 'hlavas_report_action', '_hlavas_report_nonce' ) ); ?>"
+				class="button"
+				target="_blank"
+				rel="noopener noreferrer"
+			>Tisk</a>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="hlavas-report-inline-form">
+				<?php wp_nonce_field( 'hlavas_report_action', '_hlavas_report_nonce' ); ?>
+				<?php foreach ( $report_args as $report_key => $report_value ) : ?>
+					<input type="hidden" name="<?php echo esc_attr( $report_key ); ?>" value="<?php echo esc_attr( (string) $report_value ); ?>">
+				<?php endforeach; ?>
+				<input type="hidden" name="hlavas_report_action" value="email">
+				<button type="submit" class="button">Odeslat data na e-mail</button>
+			</form>
+			<span class="hlavas-report-actions-note">Odeslání proběhne na adresu <?php echo esc_html( hlavas_terms_get_report_email() ); ?>.</span>
+		</div>
+	<?php endif; ?>
 
-        <table class="wp-list-table widefat striped hlavas-terms-table">
-            <thead>
-                <tr>
-                    <td class="manage-column column-cb check-column">
-                        <input type="checkbox" id="cb-select-all">
-                    </td>
-                    <th class="column-id">ID</th>
-                    <th class="column-type">Typ</th>
-                    <th class="column-qualification">Kvalifikace</th>
-                    <th class="column-title">Název termínu</th>
-                    <th class="column-date">Datum od</th>
-                    <th class="column-date">Datum do</th>
-                    <th class="column-deadline">Uzávěrka</th>
-                    <th class="column-capacity">Kapacita</th>
-                    <th class="column-visible">Web</th>
-                    <th class="column-active">Aktivní</th>
-                    <th class="column-archived">Archiv</th>
-                    <th class="column-sort">Pořadí</th>
-                    <th class="column-actions">Akce</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if ( empty( $terms ) ) : ?>
-                    <tr><td colspan="13">Žádné termíny nebyly nalezeny.</td></tr>
-                <?php else : ?>
-                    <?php
-                    $today = current_time( 'Y-m-d' );
-                    foreach ( $terms as $term ) :
-                        $cutoff = $term->enrollment_deadline ?: ( $term->date_start ?: $term->date_end );
-                        $is_past = $cutoff < $today;
-                        $row_class = '';
-                        if ( $is_past ) $row_class .= ' hlavas-past';
-                        if ( ! $term->is_active ) $row_class .= ' hlavas-inactive';
-                        if ( $term->is_archived ) $row_class .= ' hlavas-archived';
-                        $title = ! empty( $term->title ) ? $term->title : $term->label;
-                        $qualification = ! empty( $term->qualification_name ) ? $term->qualification_name : 'Bez návaznosti';
-                        $qualification_code = ! empty( $term->qualification_code ) ? $term->qualification_code : '';
-                        $visibility_url = wp_nonce_url(
-                            admin_url( 'admin.php?page=' . rawurlencode( $_GET['page'] ?? 'hlavas-terms' ) . '&action=toggle_visibility&term_id=' . $term->id ),
-                            'hlavas_visibility_' . $term->id
-                        );
-                    ?>
-                    <tr class="<?php echo esc_attr( trim( $row_class ) ); ?>">
-                        <th class="check-column">
-                            <input type="checkbox" name="term_ids[]" value="<?php echo esc_attr( $term->id ); ?>">
-                        </th>
-                        <td><?php echo esc_html( $term->id ); ?></td>
-                        <td>
-                            <span class="hlavas-badge hlavas-badge-<?php echo esc_attr( $term->term_type ); ?>">
-                                <?php echo $term->term_type === 'kurz' ? 'Kurz' : 'Zkouška'; ?>
-                            </span>
-                        </td>
-                        <td class="column-qualification">
-                            <span class="hlavas-qualification-main">
-                                <?php echo esc_html( $qualification_code ? $qualification_code . ' – ' . $qualification : $qualification ); ?>
-                            </span>
-                        </td>
-                        <td class="column-title">
-                            <strong>
-                                <a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit&term_id=' . $term->id ) ); ?>">
-                                    <?php echo esc_html( $title ); ?>
-                                </a>
-                            </strong>
-                            <div class="hlavas-subline">
-                                <?php echo esc_html( $term->label ); ?>
-                            </div>
-                            <code class="hlavas-subline-code"><?php echo esc_html( $term->term_key ); ?></code>
-                        </td>
-                        <td class="column-date"><?php echo esc_html( $term->date_start ); ?></td>
-                        <td class="column-date"><?php echo esc_html( $term->date_end ?? '—' ); ?></td>
-                        <td class="column-deadline"><?php echo esc_html( $term->enrollment_deadline ?: '—' ); ?></td>
-                        <td class="column-capacity"><?php echo esc_html( $term->capacity ); ?></td>
-                        <td class="column-visible">
-                            <a
-                                href="<?php echo esc_url( $visibility_url ); ?>"
-                                class="hlavas-visibility-toggle"
-                                title="<?php echo ! empty( $term->is_visible ) ? esc_attr( 'Skrýt z webu' ) : esc_attr( 'Zobrazit na webu' ); ?>"
-                                aria-label="<?php echo ! empty( $term->is_visible ) ? esc_attr( 'Skrýt z webu' ) : esc_attr( 'Zobrazit na webu' ); ?>"
-                            >
-                                <span class="dashicons <?php echo ! empty( $term->is_visible ) ? 'dashicons-visibility hlavas-status-yes' : 'dashicons-hidden hlavas-status-no'; ?>"></span>
-                            </a>
-                        </td>
-                        <td>
-                            <?php if ( $term->is_active ) : ?>
-                                <span class="hlavas-status-yes">✓</span>
-                            <?php else : ?>
-                                <span class="hlavas-status-no">✗</span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?php if ( $term->is_archived ) : ?>
-                                <span class="hlavas-status-archived">📦</span>
-                            <?php else : ?>
-                                —
-                            <?php endif; ?>
-                        </td>
-                        <td><?php echo esc_html( $term->sort_order ); ?></td>
-                        <td>
-                            <a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit&term_id=' . $term->id ) ); ?>"
-                               class="button button-small">Upravit</a>
-                            <a href="<?php echo esc_url( wp_nonce_url(
-                                admin_url( 'admin.php?page=hlavas-terms&action=delete&term_id=' . $term->id ),
-                                'hlavas_delete_' . $term->id
-                            ) ); ?>"
-                               class="button button-small button-link-delete"
-                               onclick="return confirm('Opravdu smazat tento termín?');">Smazat</a>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </tbody>
-        </table>
-    </form>
+	<form method="post">
+		<?php wp_nonce_field( 'hlavas_bulk', '_hlavas_bulk_nonce' ); ?>
+
+		<div class="tablenav top">
+			<div class="alignleft actions bulkactions">
+				<select name="bulk_action">
+					<option value="">Hromadné akce</option>
+					<option value="activate">Aktivovat</option>
+					<option value="deactivate">Deaktivovat</option>
+					<option value="archive">Archivovat</option>
+					<option value="regenerate_labels">Přegenerovat label</option>
+					<option value="sync">Synchronizovat vybrané</option>
+					<option value="delete">Smazat</option>
+				</select>
+				<button type="submit" name="hlavas_bulk_action" value="1" class="button action">Použít</button>
+			</div>
+			<div class="tablenav-pages">
+				<span class="displaying-num"><?php echo esc_html( (string) count( $terms ) ); ?> položek</span>
+			</div>
+		</div>
+
+		<table class="wp-list-table widefat striped hlavas-terms-table">
+			<thead>
+				<tr>
+					<td class="manage-column column-cb check-column">
+						<input type="checkbox" id="cb-select-all">
+					</td>
+					<th class="column-id">ID</th>
+					<th class="column-type">Typ</th>
+					<th class="column-qualification">Kvalifikace</th>
+					<th class="column-title">Název termínu</th>
+					<th class="column-date">Datum od</th>
+					<th class="column-date">Datum do</th>
+					<th class="column-deadline">Uzávěrka</th>
+					<th class="column-capacity">Kapacita</th>
+					<th class="column-synced">FF sync</th>
+					<th class="column-visible">Web</th>
+					<th class="column-active">Aktivní</th>
+					<th class="column-archived">Archiv</th>
+					<th class="column-sort">Pořadí</th>
+					<th class="column-actions">Akce</th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php if ( empty( $terms ) ) : ?>
+					<tr><td colspan="15">Žádné termíny nebyly nalezeny.</td></tr>
+				<?php else : ?>
+					<?php
+					$today = current_time( 'Y-m-d' );
+					foreach ( $terms as $term ) :
+						$cutoff             = $term->enrollment_deadline ?: ( $term->date_start ?: $term->date_end );
+						$is_past            = $cutoff < $today;
+						$row_class          = '';
+						$row_class         .= $is_past ? ' hlavas-past' : '';
+						$row_class         .= ! $term->is_active ? ' hlavas-inactive' : '';
+						$row_class         .= $term->is_archived ? ' hlavas-archived' : '';
+						$title              = ! empty( $term->title ) ? $term->title : $term->label;
+						$qualification      = ! empty( $term->qualification_name ) ? $term->qualification_name : 'Bez návaznosti';
+						$qualification_code = ! empty( $term->qualification_code ) ? $term->qualification_code : '';
+						$last_synced_at     = (string) ( $sync_log[ (string) $term->id ] ?? '' );
+						$visibility_url     = wp_nonce_url(
+							admin_url( 'admin.php?page=' . rawurlencode( $current_page ) . '&action=toggle_visibility&term_id=' . $term->id ),
+							'hlavas_visibility_' . $term->id
+						);
+						?>
+						<tr class="<?php echo esc_attr( trim( $row_class ) ); ?>">
+							<th class="check-column">
+								<input type="checkbox" name="term_ids[]" value="<?php echo esc_attr( (string) $term->id ); ?>">
+							</th>
+							<td><?php echo esc_html( (string) $term->id ); ?></td>
+							<td>
+								<span class="hlavas-badge hlavas-badge-<?php echo esc_attr( (string) $term->term_type ); ?>">
+									<?php echo 'kurz' === $term->term_type ? 'Kurz' : 'Zkouška'; ?>
+								</span>
+							</td>
+							<td class="column-qualification">
+								<span class="hlavas-qualification-main">
+									<?php echo esc_html( $qualification_code ? $qualification_code . ' - ' . $qualification : $qualification ); ?>
+								</span>
+							</td>
+							<td class="column-title">
+								<strong>
+									<a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit&term_id=' . $term->id ) ); ?>">
+										<?php echo esc_html( $title ); ?>
+									</a>
+								</strong>
+								<div class="hlavas-subline"><?php echo esc_html( (string) $term->label ); ?></div>
+								<code class="hlavas-subline-code"><?php echo esc_html( (string) $term->term_key ); ?></code>
+							</td>
+							<td class="column-date"><?php echo esc_html( (string) $term->date_start ); ?></td>
+							<td class="column-date"><?php echo esc_html( (string) ( $term->date_end ?? '—' ) ); ?></td>
+							<td class="column-deadline"><?php echo esc_html( (string) ( $term->enrollment_deadline ?: '—' ) ); ?></td>
+							<td class="column-capacity"><?php echo esc_html( (string) $term->capacity ); ?></td>
+							<td class="column-synced">
+								<?php if ( '' !== $last_synced_at ) : ?>
+									<?php echo esc_html( $last_synced_at ); ?>
+								<?php else : ?>
+									<span class="hlavas-subline">Nikdy</span>
+								<?php endif; ?>
+							</td>
+							<td class="column-visible">
+								<a
+									href="<?php echo esc_url( $visibility_url ); ?>"
+									class="hlavas-visibility-toggle"
+									title="<?php echo ! empty( $term->is_visible ) ? esc_attr( 'Skrýt z webu' ) : esc_attr( 'Zobrazit na webu' ); ?>"
+									aria-label="<?php echo ! empty( $term->is_visible ) ? esc_attr( 'Skrýt z webu' ) : esc_attr( 'Zobrazit na webu' ); ?>"
+								>
+									<span class="dashicons <?php echo ! empty( $term->is_visible ) ? 'dashicons-visibility hlavas-status-yes' : 'dashicons-hidden hlavas-status-no'; ?>"></span>
+								</a>
+							</td>
+							<td>
+								<?php if ( $term->is_active ) : ?>
+									<span class="hlavas-status-yes">✓</span>
+								<?php else : ?>
+									<span class="hlavas-status-no">✕</span>
+								<?php endif; ?>
+							</td>
+							<td>
+								<?php if ( $term->is_archived ) : ?>
+									<span class="hlavas-status-archived">📦</span>
+								<?php else : ?>
+									—
+								<?php endif; ?>
+							</td>
+							<td><?php echo esc_html( (string) $term->sort_order ); ?></td>
+							<td>
+								<a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit&term_id=' . $term->id ) ); ?>" class="button button-small">Upravit</a>
+								<a
+									href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin.php?page=hlavas-terms&action=delete&term_id=' . $term->id ), 'hlavas_delete_' . $term->id ) ); ?>"
+									class="button button-small button-link-delete"
+									onclick="return confirm('Opravdu smazat tento termín?');"
+								>Smazat</a>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				<?php endif; ?>
+			</tbody>
+		</table>
+	</form>
 </div>

@@ -31,6 +31,10 @@ define( 'HLAVAS_TERMS_TABLE', 'hlavas_terms' );
 define( 'HLAVAS_TERMS_TYPES_TABLE', 'hlavas_term_types' );
 define( 'HLAVAS_TERMS_OPTION_FORM_ID', 'hlavas_terms_fluent_form_id' );
 define( 'HLAVAS_TERMS_OPTION_DEBUG_MODE', 'hlavas_terms_debug_mode' );
+define( 'HLAVAS_TERMS_OPTION_SYNC_LOG', 'hlavas_terms_sync_log' );
+define( 'HLAVAS_TERMS_OPTION_FORM_SYNC_LOG', 'hlavas_terms_form_sync_log' );
+define( 'HLAVAS_TERMS_OPTION_SYNC_VALUE_MODE', 'hlavas_terms_sync_value_mode' );
+define( 'HLAVAS_TERMS_OPTION_REPORT_EMAIL', 'hlavas_terms_report_email' );
 define( 'HLAVAS_TERMS_DEFAULT_FORM_ID', 3 );
 define( 'HLAVAS_TERMS_PLUGIN_NAME', 'HLAVAS – Správa termínů kurzů a zkoušek' );
 define( 'HLAVAS_TERMS_PLUGIN_SLUG', 'hlavas-terms' );
@@ -90,6 +94,123 @@ function hlavas_terms_is_debug_enabled(): bool {
 }
 
 /**
+ * Returns default sync value mode.
+ *
+ * @return string
+ */
+function hlavas_terms_get_sync_value_mode(): string {
+	$value_mode = (string) get_option( HLAVAS_TERMS_OPTION_SYNC_VALUE_MODE, 'term_key' );
+
+	return in_array( $value_mode, [ 'term_key', 'label' ], true ) ? $value_mode : 'term_key';
+}
+
+/**
+ * Returns recipient e-mail for exported reports.
+ *
+ * @return string
+ */
+function hlavas_terms_get_report_email(): string {
+	$default = (string) get_bloginfo( 'admin_email' );
+	$email   = sanitize_email( (string) get_option( HLAVAS_TERMS_OPTION_REPORT_EMAIL, $default ) );
+
+	return is_email( $email ) ? $email : $default;
+}
+
+/**
+ * Returns raw sync log keyed by term ID.
+ *
+ * @return array<string, string>
+ */
+function hlavas_terms_get_sync_log(): array {
+	$log = get_option( HLAVAS_TERMS_OPTION_SYNC_LOG, [] );
+
+	return is_array( $log ) ? $log : [];
+}
+
+/**
+ * Returns raw sync log keyed by form ID.
+ *
+ * @return array<string, string>
+ */
+function hlavas_terms_get_form_sync_log(): array {
+	$log = get_option( HLAVAS_TERMS_OPTION_FORM_SYNC_LOG, [] );
+
+	return is_array( $log ) ? $log : [];
+}
+
+/**
+ * Returns last sync datetime for one term.
+ *
+ * @param int $term_id Term ID.
+ * @return string
+ */
+function hlavas_terms_get_term_last_synced_at( int $term_id ): string {
+	$log = hlavas_terms_get_sync_log();
+
+	return (string) ( $log[ (string) $term_id ] ?? '' );
+}
+
+/**
+ * Returns last sync datetime for one Fluent Form.
+ *
+ * @param int $form_id Form ID.
+ * @return string
+ */
+function hlavas_terms_get_form_last_synced_at( int $form_id ): string {
+	$log = hlavas_terms_get_form_sync_log();
+
+	return (string) ( $log[ (string) $form_id ] ?? '' );
+}
+
+/**
+ * Marks terms as synchronized at provided datetime.
+ *
+ * @param array<int, int> $term_ids Term IDs.
+ * @param string|null     $datetime Optional datetime in mysql format.
+ * @return void
+ */
+function hlavas_terms_mark_terms_synced( array $term_ids, ?string $datetime = null ): void {
+	$term_ids = array_values( array_filter( array_map( 'intval', $term_ids ) ) );
+
+	if ( empty( $term_ids ) ) {
+		return;
+	}
+
+	$log      = hlavas_terms_get_sync_log();
+	$datetime = $datetime ?: current_time( 'mysql' );
+
+	foreach ( $term_ids as $term_id ) {
+		$log[ (string) $term_id ] = $datetime;
+	}
+
+	update_option( HLAVAS_TERMS_OPTION_SYNC_LOG, $log, false );
+}
+
+/**
+ * Marks forms as synchronized at provided datetime.
+ *
+ * @param array<int, int> $form_ids Form IDs.
+ * @param string|null     $datetime Optional datetime in mysql format.
+ * @return void
+ */
+function hlavas_terms_mark_forms_synced( array $form_ids, ?string $datetime = null ): void {
+	$form_ids = array_values( array_filter( array_map( 'intval', $form_ids ) ) );
+
+	if ( empty( $form_ids ) ) {
+		return;
+	}
+
+	$log      = hlavas_terms_get_form_sync_log();
+	$datetime = $datetime ?: current_time( 'mysql' );
+
+	foreach ( $form_ids as $form_id ) {
+		$log[ (string) $form_id ] = $datetime;
+	}
+
+	update_option( HLAVAS_TERMS_OPTION_FORM_SYNC_LOG, $log, false );
+}
+
+/**
  * Returns plugin metadata for admin info page.
  *
  * @return array<string, string>
@@ -115,6 +236,8 @@ function hlavas_terms_get_plugin_info(): array {
 		'current_wp'       => get_bloginfo( 'version' ),
 		'configured_form'  => (string) hlavas_terms_get_form_id(),
 		'debug_mode'       => hlavas_terms_is_debug_enabled() ? 'Zapnuto' : 'Vypnuto',
+		'sync_value_mode'  => hlavas_terms_get_sync_value_mode(),
+		'report_email'     => hlavas_terms_get_report_email(),
 		'plugin_file'      => HLAVAS_TERMS_FILE,
 		'plugin_directory' => HLAVAS_TERMS_DIR,
 	];
