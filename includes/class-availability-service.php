@@ -143,7 +143,7 @@ class Hlavas_Terms_Availability_Service {
 
             // Check both field names.
             foreach ( self::TERM_FIELDS as $field_name ) {
-                $value = $response[ $field_name ] ?? '';
+                $value = $response[ $field_name ] ?? $this->find_value_recursive( $response, $field_name );
 
                 if ( in_array( $value, $values_to_check, true ) ) {
                     $count++;
@@ -231,5 +231,30 @@ class Hlavas_Terms_Availability_Service {
         return (bool) $wpdb->get_var(
             $wpdb->prepare( 'SHOW TABLES LIKE %s', $table_name )
         );
+    }
+
+    /**
+     * Recursively search nested response payload for one field name.
+     *
+     * @param array<string, mixed> $response Response payload.
+     * @param string               $field_name Target field name.
+     * @return string
+     */
+    private function find_value_recursive( array $response, string $field_name ): string {
+        foreach ( $response as $key => $value ) {
+            if ( is_string( $key ) && $field_name === $key ) {
+                return is_scalar( $value ) ? (string) $value : '';
+            }
+
+            if ( is_array( $value ) ) {
+                $nested = $this->find_value_recursive( $value, $field_name );
+
+                if ( '' !== $nested ) {
+                    return $nested;
+                }
+            }
+        }
+
+        return '';
     }
 }

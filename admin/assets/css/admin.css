@@ -24,6 +24,17 @@
 .hlavas-filters select {
     min-width: 100px;
 }
+.hlavas-filter-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.hlavas-filter-actions {
+    display: inline-flex;
+    gap: 10px;
+    align-items: center;
+    margin-left: auto;
+}
 
 /* Table tweaks */
 .hlavas-terms-table {
@@ -204,6 +215,71 @@
 }
 .hlavas-settings-forms-table {
     table-layout: auto !important;
+}
+.hlavas-settings-sync-tools {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+.hlavas-settings-sync-card {
+    padding: 16px 18px;
+    background: #f8fafc;
+    border: 1px solid #dbe3ea;
+    border-radius: 6px;
+}
+.hlavas-settings-sync-card h3 {
+    margin-top: 0;
+}
+.hlavas-settings-advanced {
+    margin-top: 22px;
+    border-top: 1px solid #dcdcde;
+    padding-top: 18px;
+}
+.hlavas-settings-advanced summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+}
+.hlavas-settings-advanced-body {
+    margin-top: 16px;
+}
+.hlavas-settings-map-card {
+    margin-top: 18px;
+    padding: 16px 18px;
+    background: #f8fafc;
+    border: 1px solid #dbe3ea;
+    border-radius: 6px;
+}
+.hlavas-settings-map-card h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+.hlavas-settings-map-table,
+.hlavas-settings-map-catalog-table {
+    table-layout: auto !important;
+}
+.hlavas-settings-map-table th:nth-child(1) {
+    width: 180px;
+}
+.hlavas-settings-map-table th:nth-child(2) {
+    width: 250px;
+}
+.hlavas-settings-map-table th:nth-child(3) {
+    width: 190px;
+}
+.hlavas-settings-map-table input[type="text"] {
+    width: 100%;
+    max-width: 420px;
+}
+.hlavas-settings-map-catalog {
+    margin-top: 16px;
+}
+.hlavas-settings-map-catalog summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+.hlavas-settings-map-catalog-table {
+    margin-top: 12px;
 }
 .hlavas-log-preview {
     max-height: 420px;
@@ -429,6 +505,32 @@
 .hlavas-participants-table .column-actions {
     width: 120px;
 }
+.hlavas-participants-filters {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.2fr) minmax(160px, 0.7fr) minmax(280px, 1fr) auto;
+    gap: 14px 16px;
+    align-items: end;
+}
+.hlavas-participants-filters .hlavas-filter-field {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 10px;
+    align-items: center;
+}
+.hlavas-participants-filters .hlavas-filter-field-wide {
+    min-width: 0;
+}
+.hlavas-participants-filters select {
+    min-width: 0;
+    width: 100%;
+}
+.hlavas-sort-link {
+    color: inherit;
+    text-decoration: none;
+}
+.hlavas-sort-link:hover {
+    color: #2271b1;
+}
 .hlavas-participant-details summary {
     cursor: pointer;
     list-style: none;
@@ -518,6 +620,14 @@
         min-width: 200px;
     }
 
+    .hlavas-participants-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .hlavas-filter-actions {
+        margin-left: 0;
+    }
+
     .hlavas-sync-meta,
     .hlavas-sync-previews {
         grid-template-columns: 1fr;
@@ -526,4 +636,223 @@
     .hlavas-settings-grid {
         grid-template-columns: 1fr;
     }
+
+    .hlavas-settings-sync-tools {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ---------------------------------------------------------------
+ * Dokumentace & FAQ (info stránka)
+ * ------------------------------------------------------------- */
+.hlavas-docs-section {
+    margin-top: 40px;
+}
+.hlavas-docs-section > h2 {
+    border-bottom: 2px solid #2271b1;
+    padding-bottom: 8px;
+    color: #1d2327;
+}
+.hlavas-docs-intro {
+    background: #f0f6fc;
+    border-left: 4px solid #2271b1;
+    padding: 14px 18px;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 20px;
+    font-size: 14px;
+    line-height: 1.7;
+}
+.hlavas-docs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+.hlavas-doc-item {
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+}
+.hlavas-doc-item summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    background: #f6f7f7;
+    border-bottom: 1px solid transparent;
+    user-select: none;
+    list-style: none;
+}
+.hlavas-doc-item summary::-webkit-details-marker { display: none; }
+.hlavas-doc-item[open] summary {
+    background: #e8f0fb;
+    border-bottom-color: #c3d4f0;
+    color: #1a4480;
+}
+.hlavas-doc-item summary::after {
+    content: '▸';
+    margin-left: auto;
+    font-size: 12px;
+    color: #787c82;
+    transition: transform .2s;
+    flex-shrink: 0;
+}
+.hlavas-doc-item[open] summary::after {
+    transform: rotate(90deg);
+}
+.hlavas-doc-item-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+.hlavas-doc-item-body {
+    padding: 16px 18px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #3c434a;
+}
+.hlavas-doc-item-body p { margin: 0 0 10px; }
+.hlavas-doc-item-body p:last-child { margin-bottom: 0; }
+.hlavas-doc-item-body ul,
+.hlavas-doc-item-body ol {
+    margin: 6px 0 10px 20px;
+    padding: 0;
+}
+.hlavas-doc-item-body li { margin-bottom: 4px; }
+.hlavas-doc-item-body h4 {
+    margin: 14px 0 6px;
+    font-size: 13px;
+    color: #1d2327;
+}
+.hlavas-doc-item-body code {
+    background: #f0f0f1;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+.hlavas-doc-item-body .hlavas-doc-tip {
+    background: #fff8e1;
+    border-left: 3px solid #f0b429;
+    padding: 8px 12px;
+    border-radius: 0 4px 4px 0;
+    margin-top: 10px;
+    font-size: 12px;
+}
+.hlavas-doc-item-body .hlavas-doc-warning {
+    background: #fff0f0;
+    border-left: 3px solid #d63638;
+    padding: 8px 12px;
+    border-radius: 0 4px 4px 0;
+    margin-top: 10px;
+    font-size: 12px;
+}
+.hlavas-doc-item-body .hlavas-doc-ok {
+    background: #edfaee;
+    border-left: 3px solid #00a32a;
+    padding: 8px 12px;
+    border-radius: 0 4px 4px 0;
+    margin-top: 10px;
+    font-size: 12px;
+}
+.hlavas-doc-steps {
+    counter-reset: step-counter;
+    list-style: none;
+    margin-left: 0 !important;
+    padding: 0;
+}
+.hlavas-doc-steps li {
+    counter-increment: step-counter;
+    padding: 6px 0 6px 36px;
+    position: relative;
+    border-bottom: 1px dashed #ececec;
+}
+.hlavas-doc-steps li:last-child { border-bottom: none; }
+.hlavas-doc-steps li::before {
+    content: counter(step-counter);
+    position: absolute;
+    left: 0;
+    top: 6px;
+    width: 22px;
+    height: 22px;
+    background: #2271b1;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* FAQ sekce */
+.hlavas-faq-section {
+    margin-top: 36px;
+}
+.hlavas-faq-section > h2 {
+    border-bottom: 2px solid #a0a0a0;
+    padding-bottom: 8px;
+    color: #1d2327;
+}
+.hlavas-faq-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 16px;
+}
+.hlavas-faq-item {
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    background: #fff;
+    overflow: hidden;
+}
+.hlavas-faq-item summary {
+    padding: 13px 16px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    background: #f6f7f7;
+    border-bottom: 1px solid transparent;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+}
+.hlavas-faq-item summary::-webkit-details-marker { display: none; }
+.hlavas-faq-item[open] summary {
+    background: #f0f6fc;
+    border-bottom-color: #dcdcde;
+    color: #1a4480;
+}
+.hlavas-faq-item summary::after {
+    content: '▸';
+    margin-left: auto;
+    font-size: 11px;
+    color: #787c82;
+}
+.hlavas-faq-item[open] summary::after {
+    transform: rotate(90deg);
+    display: inline-block;
+}
+.hlavas-faq-answer {
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.75;
+    color: #3c434a;
+}
+.hlavas-faq-answer p { margin: 0 0 8px; }
+.hlavas-faq-answer p:last-child { margin-bottom: 0; }
+.hlavas-faq-answer ul { margin: 6px 0 8px 20px; }
+.hlavas-faq-answer code {
+    background: #f0f0f1;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+@media (max-width: 960px) {
+    .hlavas-docs-grid { grid-template-columns: 1fr; }
 }

@@ -391,6 +391,20 @@ class Hlavas_Terms_Admin {
 		}
 
 		if (
+			isset( $_POST['hlavas_terms_import_from_ff'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_ff_import_nonce'] ?? '' ) ), 'hlavas_terms_import_from_ff' )
+		) {
+			$this->handle_import_from_ff();
+		}
+
+		if (
+			isset( $_POST['hlavas_terms_export_to_ff'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_ff_export_nonce'] ?? '' ) ), 'hlavas_terms_export_to_ff' )
+		) {
+			$this->handle_export_to_ff();
+		}
+
+		if (
 			isset( $_POST['hlavas_type_save'] ) &&
 			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_type_nonce'] ?? '' ) ), 'hlavas_type_save' )
 		) {
@@ -1058,11 +1072,15 @@ class Hlavas_Terms_Admin {
 		$qualification_type_id = absint( $_REQUEST['qualification_type_id'] ?? 0 );
 		$term_type             = sanitize_text_field( wp_unslash( $_REQUEST['participant_term_type'] ?? '' ) );
 		$term_id               = absint( $_REQUEST['participant_term_id'] ?? 0 );
+		$sort_by               = sanitize_key( (string) ( $_REQUEST['participant_sort_by'] ?? 'created_at' ) );
+		$sort_order            = sanitize_key( (string) ( $_REQUEST['participant_sort_order'] ?? 'desc' ) );
 
 		return [
 			'qualification_type_id' => $qualification_type_id,
 			'term_type'             => in_array( $term_type, [ 'kurz', 'zkouska' ], true ) ? $term_type : '',
 			'term_id'               => $term_id,
+			'sort_by'               => in_array( $sort_by, [ 'name', 'qualification', 'term_title', 'created_at', 'status', 'email', 'term_type' ], true ) ? $sort_by : 'created_at',
+			'sort_order'            => in_array( $sort_order, [ 'asc', 'desc' ], true ) ? $sort_order : 'desc',
 		];
 	}
 
@@ -1100,6 +1118,12 @@ class Hlavas_Terms_Admin {
 			}
 			if ( isset( $_REQUEST['participant_term_id'] ) && '' !== (string) $_REQUEST['participant_term_id'] ) {
 				$args['participant_term_id'] = absint( $_REQUEST['participant_term_id'] );
+			}
+			if ( isset( $_REQUEST['participant_sort_by'] ) && '' !== (string) $_REQUEST['participant_sort_by'] ) {
+				$args['participant_sort_by'] = sanitize_key( (string) $_REQUEST['participant_sort_by'] );
+			}
+			if ( isset( $_REQUEST['participant_sort_order'] ) && '' !== (string) $_REQUEST['participant_sort_order'] ) {
+				$args['participant_sort_order'] = sanitize_key( (string) $_REQUEST['participant_sort_order'] );
 			}
 		}
 
@@ -1259,6 +1283,7 @@ class Hlavas_Terms_Admin {
 		$debug_mode      = isset( $_POST['hlavas_terms_debug_mode'] ) ? 1 : 0;
 		$sync_value_mode = sanitize_text_field( wp_unslash( $_POST['hlavas_terms_sync_value_mode'] ?? 'term_key' ) );
 		$report_email    = sanitize_email( wp_unslash( $_POST['hlavas_terms_report_email'] ?? '' ) );
+		$field_map       = $this->sanitize_settings_field_map( $_POST['hlavas_terms_field_map'] ?? [] );
 
 		if ( $form_id <= 0 ) {
 			$form_id = HLAVAS_TERMS_DEFAULT_FORM_ID;
@@ -1276,6 +1301,7 @@ class Hlavas_Terms_Admin {
 		update_option( HLAVAS_TERMS_OPTION_DEBUG_MODE, $debug_mode );
 		update_option( HLAVAS_TERMS_OPTION_SYNC_VALUE_MODE, $sync_value_mode );
 		update_option( HLAVAS_TERMS_OPTION_REPORT_EMAIL, $report_email );
+		update_option( HLAVAS_TERMS_OPTION_FIELD_MAP, $field_map, false );
 		hlavas_terms_log_event(
 			'settings_saved',
 			'Nastaveni pluginu bylo ulozeno.',
@@ -1284,6 +1310,8 @@ class Hlavas_Terms_Admin {
 				'debug_mode'      => $debug_mode,
 				'sync_value_mode' => $sync_value_mode,
 				'report_email'    => $report_email,
+				'field_map_forms' => count( $field_map ),
+				'field_map_items' => array_sum( array_map( 'count', $field_map ) ),
 			]
 		);
 
@@ -1291,6 +1319,41 @@ class Hlavas_Terms_Admin {
 			admin_url( 'admin.php?page=hlavas-terms-settings&message=saved' )
 		);
 		exit;
+	}
+
+	/**
+	 * Sanitize manual per-form field mapping posted from settings page.
+	 *
+	 * @param mixed $raw Raw input.
+	 * @return array<int, array<string, string>>
+	 */
+	private function sanitize_settings_field_map( mixed $raw ): array {
+		if ( ! is_array( $raw ) ) {
+			return [];
+		}
+
+		$output = [];
+
+		foreach ( $raw as $form_id => $field_items ) {
+			$form_id = absint( $form_id );
+
+			if ( $form_id <= 0 || ! is_array( $field_items ) ) {
+				continue;
+			}
+
+			foreach ( $field_items as $identifier => $value ) {
+				$identifier = sanitize_key( (string) $identifier );
+				$value      = trim( sanitize_text_field( wp_unslash( (string) $value ) ) );
+
+				if ( '' === $identifier || '' === $value ) {
+					continue;
+				}
+
+				$output[ $form_id ][ $identifier ] = $value;
+			}
+		}
+
+		return $output;
 	}
 
 	/**
@@ -1388,6 +1451,65 @@ class Hlavas_Terms_Admin {
 
 		wp_safe_redirect(
 			admin_url( 'admin.php?page=hlavas-terms-settings&message=sync_log_reset' )
+		);
+		exit;
+	}
+
+	/**
+	 * Import current term options from configured Fluent Forms into plugin data.
+	 *
+	 * @return void
+	 */
+	private function handle_import_from_ff(): void {
+		$replace_existing = ! empty( $_POST['hlavas_terms_import_replace_existing'] );
+		$result           = $this->sync->import_into_plugin( $replace_existing );
+
+		hlavas_terms_log_event(
+			'forms_imported_into_plugin',
+			! empty( $result['success'] ) ? 'Import z Fluent Forms do pluginu byl dokoncen.' : 'Import z Fluent Forms do pluginu selhal.',
+			[
+				'replace_existing' => $replace_existing ? 1 : 0,
+				'created'          => (int) ( $result['created'] ?? 0 ),
+				'updated'          => (int) ( $result['updated'] ?? 0 ),
+				'skipped'          => (int) ( $result['skipped'] ?? 0 ),
+				'details'          => is_array( $result['details'] ?? null ) ? array_values( $result['details'] ) : [],
+			],
+			! empty( $result['success'] ) ? 'warning' : 'error'
+		);
+
+		wp_safe_redirect(
+			admin_url(
+				'admin.php?page=hlavas-terms-settings&message=' . ( ! empty( $result['success'] ) ? 'imported_from_ff' : 'import_from_ff_failed' ) .
+				'&created=' . (int) ( $result['created'] ?? 0 ) .
+				'&updated=' . (int) ( $result['updated'] ?? 0 ) .
+				'&skipped=' . (int) ( $result['skipped'] ?? 0 )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Export current plugin terms to configured Fluent Forms.
+	 *
+	 * @return void
+	 */
+	private function handle_export_to_ff(): void {
+		$value_mode = hlavas_terms_get_sync_value_mode();
+		$result     = $this->sync->execute( $value_mode );
+
+		hlavas_terms_log_event(
+			'forms_exported_from_plugin',
+			! empty( $result['success'] ) ? 'Export z pluginu do Fluent Forms byl dokoncen.' : 'Export z pluginu do Fluent Forms selhal.',
+			[
+				'value_mode' => $value_mode,
+				'success'    => ! empty( $result['success'] ) ? 1 : 0,
+				'details'    => is_array( $result['details'] ?? null ) ? array_values( $result['details'] ) : [],
+			],
+			! empty( $result['success'] ) ? 'info' : 'error'
+		);
+
+		wp_safe_redirect(
+			admin_url( 'admin.php?page=hlavas-terms-settings&message=' . ( ! empty( $result['success'] ) ? 'exported_to_ff' : 'export_to_ff_failed' ) )
 		);
 		exit;
 	}
@@ -1569,18 +1691,20 @@ class Hlavas_Terms_Admin {
 	 * @return void
 	 */
 	public function page_settings(): void {
-		$message           = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
-		$form_id           = hlavas_terms_get_form_id();
-		$debug_mode        = hlavas_terms_is_debug_enabled();
-		$sync_value_mode   = hlavas_terms_get_sync_value_mode();
-		$report_email      = hlavas_terms_get_report_email();
-		$activity_log_path = hlavas_terms_get_log_file_path();
+		$message            = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
+		$form_id            = hlavas_terms_get_form_id();
+		$debug_mode         = hlavas_terms_is_debug_enabled();
+		$sync_value_mode    = hlavas_terms_get_sync_value_mode();
+		$report_email       = hlavas_terms_get_report_email();
+		$field_map          = hlavas_terms_get_field_map();
+		$activity_log_path  = hlavas_terms_get_log_file_path();
 		$activity_log_lines = hlavas_terms_get_log_lines( 200 );
-		$plugin_info       = hlavas_terms_get_plugin_info();
-		$types             = $this->type_repo->get_all();
-		$settings_status   = $this->get_settings_status();
-		$form_registry     = $this->get_settings_form_registry( $types, $form_id );
-		$sync_log          = hlavas_terms_get_sync_log();
+		$plugin_info        = hlavas_terms_get_plugin_info();
+		$types              = $this->type_repo->get_all();
+		$settings_status    = $this->get_settings_status();
+		$form_registry      = $this->get_settings_form_registry( $types, $form_id );
+		$form_mapping_sections = $this->sync->get_form_sections();
+		$sync_log           = hlavas_terms_get_sync_log();
 
 		include HLAVAS_TERMS_DIR . 'admin/views/settings.php';
 	}
@@ -1734,6 +1858,7 @@ class Hlavas_Terms_Admin {
 				HLAVAS_TERMS_OPTION_DEBUG_MODE     => hlavas_terms_is_debug_enabled() ? 1 : 0,
 				HLAVAS_TERMS_OPTION_SYNC_VALUE_MODE => hlavas_terms_get_sync_value_mode(),
 				HLAVAS_TERMS_OPTION_REPORT_EMAIL   => hlavas_terms_get_report_email(),
+				HLAVAS_TERMS_OPTION_FIELD_MAP      => hlavas_terms_get_field_map(),
 				HLAVAS_TERMS_OPTION_SYNC_LOG       => hlavas_terms_get_sync_log(),
 				HLAVAS_TERMS_OPTION_FORM_SYNC_LOG  => hlavas_terms_get_form_sync_log(),
 			],
@@ -1860,6 +1985,11 @@ class Hlavas_Terms_Admin {
 				? sanitize_email( (string) $options[ HLAVAS_TERMS_OPTION_REPORT_EMAIL ] )
 				: (string) get_bloginfo( 'admin_email' )
 		);
+		update_option(
+			HLAVAS_TERMS_OPTION_FIELD_MAP,
+			$this->sanitize_settings_field_map( $options[ HLAVAS_TERMS_OPTION_FIELD_MAP ] ?? [] ),
+			false
+		);
 		update_option( 'hlavas_terms_db_version', HLAVAS_TERMS_VERSION );
 
 		return 'imported';
@@ -1919,14 +2049,7 @@ class Hlavas_Terms_Admin {
 	 * @return void
 	 */
 	public function page_participants(): void {
-		$qualification_type_id = absint( $_GET['qualification_type_id'] ?? 0 );
-		$term_type             = sanitize_text_field( wp_unslash( $_GET['participant_term_type'] ?? '' ) );
-		$term_id               = absint( $_GET['participant_term_id'] ?? 0 );
-		$filters               = [
-			'qualification_type_id' => $qualification_type_id,
-			'term_type'             => in_array( $term_type, [ 'kurz', 'zkouska' ], true ) ? $term_type : '',
-			'term_id'               => $term_id,
-		];
+		$filters               = $this->get_participant_filters_from_request();
 		$participants          = $this->participants->get_participants( $filters );
 		$qualification_types   = $this->type_repo->get_all();
 		$terms                 = $this->repo->get_all(

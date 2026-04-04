@@ -47,6 +47,7 @@ function hlavas_terms_uninstall_delete_options( wpdb $wpdb ): void {
 		'hlavas_terms_form_sync_log',
 		'hlavas_terms_sync_value_mode',
 		'hlavas_terms_report_email',
+		'hlavas_terms_field_map',
 		'hlavas_terms_db_version',
 		'hlavas_terms_plugin_version',
 	];
@@ -58,6 +59,7 @@ function hlavas_terms_uninstall_delete_options( wpdb $wpdb ): void {
 	delete_transient( 'hlavas_terms_sync_preview' );
 	delete_transient( 'hlavas_sync_result' );
 
+	// Remove all plugin transients including per-user term sync results.
 	$wpdb->query(
 		$wpdb->prepare(
 			"DELETE FROM {$options_table}

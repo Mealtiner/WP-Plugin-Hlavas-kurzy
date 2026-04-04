@@ -204,7 +204,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			'form_title'        => (string) $form->title,
 			'configuration'     => $config,
 			'field_catalog'     => $this->collect_field_catalog( $fields ),
-			'field_matches'     => $this->get_expected_field_matches( $fields ),
+			'field_matches'     => $this->get_expected_field_matches( $fields, (int) $form->id ),
 			'inventory_meta'    => $this->get_inventory_meta( (int) $form->id ),
 			'raw_fields'        => $fields,
 		];
@@ -264,6 +264,145 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			'success' => true,
 			'message' => $message,
 			'details' => $details,
+		];
+	}
+
+	/**
+	 * Import current term choices from configured Fluent Forms into plugin terms table.
+	 *
+	 * @param bool $replace_existing Whether to clear existing plugin terms first.
+	 * @return array{success: bool, message: string, details: array<int, string>, created: int, updated: int, skipped: int}
+	 */
+	public function import_into_plugin( bool $replace_existing = false ): array {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$configs = $this->get_form_configurations();
+
+		if ( empty( $configs ) ) {
+			return [
+				'success' => false,
+				'message' => 'Neni nastaven zadny formular pro import z Fluent Forms.',
+				'details' => [],
+				'created' => 0,
+				'updated' => 0,
+				'skipped' => 0,
+			];
+		}
+
+		if ( $replace_existing ) {
+			$wpdb->query( 'DELETE FROM ' . hlavas_terms_get_table_name() ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
+
+		$created         = 0;
+		$updated         = 0;
+		$skipped         = 0;
+		$details         = [];
+		$processed_keys  = [];
+
+		foreach ( $configs as $config ) {
+			$form_id = (int) $config['form_id'];
+			$form    = $this->get_form_by_id( $form_id );
+
+			if ( ! $form ) {
+				$details[] = 'Formular #' . $form_id . ' nebyl nalezen pro import.';
+				continue;
+			}
+
+			$fields  = $this->parse_form_fields( $form );
+			$targets = $this->get_import_targets_for_configuration( $config );
+
+			foreach ( $targets as $identifier => $target ) {
+				$field_path = $this->find_field_path_by_aliases(
+					$fields,
+					$this->get_aliases_for_form( $form_id, $identifier, (array) self::SYNC_FIELDS[ $identifier ]['aliases'] )
+				);
+
+				if ( null === $field_path ) {
+					$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" nebylo nalezeno pro import.';
+					continue;
+				}
+
+				$field = $this->get_field_by_path( $fields, $field_path );
+
+				if ( ! is_array( $field ) ) {
+					$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" se nepodarilo nacist pro import.';
+					continue;
+				}
+
+				$options = $field['settings']['advanced_options'] ?? [];
+
+				if ( ! is_array( $options ) || empty( $options ) ) {
+					$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" neobsahuje zadne volby terminu.';
+					continue;
+				}
+
+				$qualification_type_id = $this->resolve_import_qualification_type_id( $config, (string) $target['term_type'] );
+
+				foreach ( array_values( $options ) as $index => $option ) {
+					if ( ! is_array( $option ) ) {
+						$skipped++;
+						continue;
+					}
+
+					$term_data = $this->build_import_term_data(
+						$option,
+						(string) $target['term_type'],
+						$qualification_type_id,
+						( $index + 1 ) * 10
+					);
+
+					if ( null === $term_data ) {
+						$skipped++;
+						continue;
+					}
+
+					$term_key = (string) $term_data['term_key'];
+
+					if ( isset( $processed_keys[ $term_key ] ) ) {
+						$skipped++;
+						continue;
+					}
+
+					$processed_keys[ $term_key ] = true;
+					$existing                    = $this->repo->find_by_key( $term_key );
+
+					if ( $existing ) {
+						$update_data = $term_data;
+
+						if ( ! empty( $existing->title ) ) {
+							unset( $update_data['title'] );
+						}
+
+						unset( $update_data['notes'] );
+						$this->repo->update( (int) $existing->id, $update_data );
+						$updated++;
+						continue;
+					}
+
+					$inserted_id = $this->repo->insert( $term_data );
+
+					if ( false !== $inserted_id ) {
+						$created++;
+					} else {
+						$skipped++;
+					}
+				}
+			}
+		}
+
+		$success = $created > 0 || $updated > 0;
+		$message = $success
+			? 'Import z Fluent Forms do pluginu byl dokoncen.'
+			: 'Import z Fluent Forms nenasel zadne pouzitelne terminy.';
+
+		return [
+			'success' => $success,
+			'message' => $message,
+			'details' => $details,
+			'created' => $created,
+			'updated' => $updated,
+			'skipped' => $skipped,
 		];
 	}
 
@@ -357,8 +496,17 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			return [];
 		}
 
-		$fields     = $this->parse_form_fields( $form );
-		$field_path = $this->find_field_path_by_aliases( $fields, [ $identifier ] );
+		$fields = $this->parse_form_fields( $form );
+
+		if ( isset( self::SYNC_FIELDS[ $identifier ] ) ) {
+			$aliases = $this->get_aliases_for_form( (int) $config['form_id'], $identifier, (array) self::SYNC_FIELDS[ $identifier ]['aliases'] );
+		} elseif ( isset( self::EXPECTED_FIELDS[ $identifier ] ) ) {
+			$aliases = $this->get_aliases_for_form( (int) $config['form_id'], $identifier, (array) self::EXPECTED_FIELDS[ $identifier ]['aliases'] );
+		} else {
+			$aliases = [ $identifier ];
+		}
+
+		$field_path = $this->find_field_path_by_aliases( $fields, $aliases );
 
 		if ( null === $field_path ) {
 			return [];
@@ -406,7 +554,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			'form_found'      => true,
 			'config'          => $config,
 			'field_catalog'   => $this->collect_field_catalog( $fields ),
-			'field_matches'   => $this->get_expected_field_matches( $fields ),
+			'field_matches'   => $this->get_expected_field_matches( $fields, (int) $form->id ),
 			'sync_fields'     => $this->get_sync_field_matches( $fields, $config ),
 			'term_previews'   => $this->build_term_previews( $config ),
 			'inventory_meta'  => $this->get_inventory_meta( (int) $form->id ),
@@ -529,15 +677,18 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	private function build_empty_sync_fields( array $config ): array {
 		$targets = $this->get_targets_for_configuration( $config );
 		$output  = [];
+		$form_id = (int) ( $config['form_id'] ?? 0 );
 
 		foreach ( $targets as $identifier => $target ) {
 			$output[ $identifier ] = [
-				'identifier'   => $identifier,
-				'label'        => self::SYNC_FIELDS[ $identifier ]['label'],
-				'term_type'    => $target['term_type'],
-				'found'        => false,
-				'field'        => null,
-				'terms_count'  => count( $target['terms'] ),
+				'identifier'      => $identifier,
+				'label'           => self::SYNC_FIELDS[ $identifier ]['label'],
+				'term_type'       => $target['term_type'],
+				'found'           => false,
+				'field'           => null,
+				'terms_count'     => count( $target['terms'] ),
+				'manual_mapping'  => $this->get_manual_mapping_value( $form_id, $identifier ),
+				'configured_keys' => $this->get_aliases_for_form( $form_id, $identifier, (array) self::SYNC_FIELDS[ $identifier ]['aliases'] ),
 			];
 		}
 
@@ -592,19 +743,22 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	private function get_sync_field_matches( array $fields, array $config ): array {
 		$targets = $this->get_targets_for_configuration( $config );
 		$output  = [];
+		$form_id = (int) ( $config['form_id'] ?? 0 );
 
 		foreach ( $targets as $identifier => $target ) {
-			$aliases    = self::SYNC_FIELDS[ $identifier ]['aliases'];
+			$aliases    = $this->get_aliases_for_form( $form_id, $identifier, (array) self::SYNC_FIELDS[ $identifier ]['aliases'] );
 			$field_path = $this->find_field_path_by_aliases( $fields, $aliases );
 			$field      = null !== $field_path ? $this->get_field_by_path( $fields, $field_path ) : null;
 
 			$output[ $identifier ] = [
-				'identifier'   => $identifier,
-				'label'        => self::SYNC_FIELDS[ $identifier ]['label'],
-				'term_type'    => (string) $target['term_type'],
-				'found'        => is_array( $field ),
-				'field'        => is_array( $field ) ? $this->summarize_field( $field ) : null,
-				'terms_count'  => count( $target['terms'] ),
+				'identifier'      => $identifier,
+				'label'           => self::SYNC_FIELDS[ $identifier ]['label'],
+				'term_type'       => (string) $target['term_type'],
+				'found'           => is_array( $field ),
+				'field'           => is_array( $field ) ? $this->summarize_field( $field ) : null,
+				'terms_count'     => count( $target['terms'] ),
+				'manual_mapping'  => $this->get_manual_mapping_value( $form_id, $identifier ),
+				'configured_keys' => $aliases,
 			];
 		}
 
@@ -617,19 +771,22 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 * @param array<int, array<string, mixed>> $fields Form fields.
 	 * @return array<string, array<string, mixed>>
 	 */
-	private function get_expected_field_matches( array $fields ): array {
+	private function get_expected_field_matches( array $fields, int $form_id ): array {
 		$output = [];
 
 		foreach ( self::EXPECTED_FIELDS as $identifier => $definition ) {
-			$field_path = $this->find_field_path_by_aliases( $fields, (array) $definition['aliases'] );
+			$aliases    = $this->get_aliases_for_form( $form_id, $identifier, (array) $definition['aliases'] );
+			$field_path = $this->find_field_path_by_aliases( $fields, $aliases );
 			$field      = null !== $field_path ? $this->get_field_by_path( $fields, $field_path ) : null;
 
 			$output[ $identifier ] = [
-				'identifier'  => $identifier,
-				'label'       => (string) $definition['label'],
-				'description' => (string) $definition['description'],
-				'found'       => is_array( $field ),
-				'field'       => is_array( $field ) ? $this->summarize_field( $field ) : null,
+				'identifier'      => $identifier,
+				'label'           => (string) $definition['label'],
+				'description'     => (string) $definition['description'],
+				'found'           => is_array( $field ),
+				'field'           => is_array( $field ) ? $this->summarize_field( $field ) : null,
+				'manual_mapping'  => $this->get_manual_mapping_value( $form_id, $identifier ),
+				'configured_keys' => $aliases,
 			];
 		}
 
@@ -666,7 +823,10 @@ class Hlavas_Terms_Fluent_Sync_Service {
 		$synced_term_ids = [];
 
 		foreach ( $targets as $identifier => $target ) {
-			$field_path = $this->find_field_path_by_aliases( $fields, (array) self::SYNC_FIELDS[ $identifier ]['aliases'] );
+			$field_path = $this->find_field_path_by_aliases(
+				$fields,
+				$this->get_aliases_for_form( $form_id, $identifier, (array) self::SYNC_FIELDS[ $identifier ]['aliases'] )
+			);
 
 			if ( null === $field_path ) {
 				$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" nebylo nalezeno.';
@@ -685,7 +845,6 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			}
 
 			$options = [];
-			$stock   = [];
 
 			foreach ( $target['terms'] as $term ) {
 				$value = 'label' === $value_mode ? (string) $term->label : (string) $term->term_key;
@@ -695,23 +854,22 @@ class Hlavas_Terms_Fluent_Sync_Service {
 					'value'      => $value,
 					'calc_value' => (string) (int) $term->capacity,
 					'image'      => '',
-				];
-
-				$stock[] = [
-					'value'    => $value,
-					'quantity' => (int) $term->capacity,
+					'quantity'   => (int) $term->capacity,
 				];
 
 				$synced_term_ids[] = (int) $term->id;
 			}
 
-			$field['settings']['advanced_options']   = $options;
-			$field['settings']['inventory_settings'] = [
-				'enabled'           => 'simple',
-				'stock_quantity'    => $stock,
-				'stock_out_message' => 'Tenhle termin uz je bohuzel plny.',
-				'hide_choice'       => false,
-			];
+			$field['settings']['advanced_options']            = $options;
+			$field['settings']['inventory_type']              = 'simple';
+			$field['settings']['inventory_stockout_message']  = (string) ( $field['settings']['inventory_stockout_message'] ?? 'Tenhle termin uz je bohuzel plny.' );
+			$field['settings']['hide_choice_when_stockout']   = (string) ( $field['settings']['hide_choice_when_stockout'] ?? 'no' );
+			$field['settings']['hide_input_when_stockout']    = (string) ( $field['settings']['hide_input_when_stockout'] ?? 'no' );
+			$field['settings']['disable_input_when_stockout'] = (string) ( $field['settings']['disable_input_when_stockout'] ?? 'no' );
+			$field['settings']['show_stock']                  = (string) ( $field['settings']['show_stock'] ?? 'yes' );
+			$field['settings']['simple_inventory']            = (string) ( $field['settings']['simple_inventory'] ?? '' );
+			$field['settings']['stock_quantity_label']        = (string) ( $field['settings']['stock_quantity_label'] ?? ' - {remaining_quantity} available' );
+			unset( $field['settings']['inventory_settings'] );
 
 			$this->set_field_by_path( $fields, $field_path, $field );
 
@@ -809,6 +967,270 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	}
 
 	/**
+	 * Get import targets per configuration without requiring existing plugin terms.
+	 *
+	 * @param array<string, mixed> $config Configuration.
+	 * @return array<string, array<string, string>>
+	 */
+	private function get_import_targets_for_configuration( array $config ): array {
+		$assignments = is_array( $config['assignments'] ?? null ) ? $config['assignments'] : [];
+		$targets     = [];
+
+		foreach ( self::SYNC_FIELDS as $identifier => $definition ) {
+			$term_type        = (string) $definition['term_type'];
+			$allow_for_target = false;
+
+			foreach ( $assignments as $assignment ) {
+				$assignment_term_type = (string) ( $assignment['term_type'] ?? '' );
+
+				if ( 'mixed' === $assignment_term_type || $assignment_term_type === $term_type ) {
+					$allow_for_target = true;
+					break;
+				}
+			}
+
+			if ( $allow_for_target ) {
+				$targets[ $identifier ] = [
+					'identifier' => $identifier,
+					'term_type'  => $term_type,
+				];
+			}
+		}
+
+		return $targets;
+	}
+
+	/**
+	 * Resolve one qualification type for imported terms when mapping is unambiguous.
+	 *
+	 * @param array<string, mixed> $config Configuration.
+	 * @param string               $term_type kurz|zkouska
+	 * @return int
+	 */
+	private function resolve_import_qualification_type_id( array $config, string $term_type ): int {
+		$assignments = is_array( $config['assignments'] ?? null ) ? $config['assignments'] : [];
+		$type_ids    = [];
+
+		foreach ( $assignments as $assignment ) {
+			if ( $term_type !== (string) ( $assignment['term_type'] ?? '' ) ) {
+				continue;
+			}
+
+			$type_id = (int) ( $assignment['qualification_type_id'] ?? 0 );
+
+			if ( $type_id > 0 ) {
+				$type_ids[] = $type_id;
+			}
+		}
+
+		$type_ids = array_values( array_unique( $type_ids ) );
+
+		return 1 === count( $type_ids ) ? (int) $type_ids[0] : 0;
+	}
+
+	/**
+	 * Build term row payload from one existing Fluent Forms option.
+	 *
+	 * @param array<string, mixed> $option One advanced option.
+	 * @param string               $term_type kurz|zkouska
+	 * @param int                  $qualification_type_id Qualification type ID.
+	 * @param int                  $sort_order Sort order.
+	 * @return array<string, mixed>|null
+	 */
+	private function build_import_term_data( array $option, string $term_type, int $qualification_type_id, int $sort_order ): ?array {
+		$label    = trim( (string) ( $option['label'] ?? '' ) );
+		$value    = trim( (string) ( $option['value'] ?? '' ) );
+		$capacity = $this->extract_option_capacity( $option );
+
+		if ( '' === $label ) {
+			return null;
+		}
+
+		$dates = $this->parse_import_term_dates( $term_type, $value, $label );
+
+		if ( null === $dates ) {
+			return null;
+		}
+
+		$term_key = $this->determine_import_term_key( $term_type, $value, $dates['date_start'], $dates['date_end'] );
+
+		return [
+			'term_type'             => $term_type,
+			'term_key'              => $term_key,
+			'qualification_type_id' => $qualification_type_id,
+			'title'                 => $label,
+			'label'                 => $label,
+			'date_start'            => $dates['date_start'],
+			'date_end'              => $dates['date_end'],
+			'enrollment_deadline'   => $dates['date_start'],
+			'capacity'              => $capacity,
+			'is_visible'            => 1,
+			'is_active'             => 1,
+			'is_archived'           => 0,
+			'sort_order'            => $sort_order,
+			'notes'                 => 'Importovano z Fluent Forms.',
+		];
+	}
+
+	/**
+	 * Extract one numeric capacity from existing FF option.
+	 *
+	 * @param array<string, mixed> $option Form option.
+	 * @return int
+	 */
+	private function extract_option_capacity( array $option ): int {
+		$capacity = $option['quantity'] ?? $option['calc_value'] ?? 0;
+
+		return is_numeric( $capacity ) ? max( 0, (int) $capacity ) : 0;
+	}
+
+	/**
+	 * Parse term dates from existing option value or label.
+	 *
+	 * @param string $term_type kurz|zkouska
+	 * @param string $value Current option value.
+	 * @param string $label Current option label.
+	 * @return array<string, string>|null
+	 */
+	private function parse_import_term_dates( string $term_type, string $value, string $label ): ?array {
+		$from_key = $this->parse_dates_from_term_key( $term_type, $value );
+
+		if ( null !== $from_key ) {
+			return $from_key;
+		}
+
+		$normalized_label = trim(
+			preg_replace(
+				'~^(kurz|zkouška|zkouska)\s*:\s*~iu',
+				'',
+				$label
+			)
+		);
+		$normalized_ascii = $this->normalize_ascii( $normalized_label );
+		$months           = $this->get_month_number_map();
+
+		if ( preg_match( '~(\d{1,2})\.\s*-\s*(\d{1,2})\.\s*([[:alpha:]]+)\s+(\d{4})~u', $normalized_ascii, $matches ) ) {
+			$month = $months[ $matches[3] ] ?? 0;
+
+			if ( $month > 0 ) {
+				return [
+					'date_start' => sprintf( '%04d-%02d-%02d', (int) $matches[4], $month, (int) $matches[1] ),
+					'date_end'   => sprintf( '%04d-%02d-%02d', (int) $matches[4], $month, (int) $matches[2] ),
+				];
+			}
+		}
+
+		if ( preg_match( '~(\d{1,2})\.\s*([[:alpha:]]+)\s*-\s*(\d{1,2})\.\s*([[:alpha:]]+)\s+(\d{4})~u', $normalized_ascii, $matches ) ) {
+			$start_month = $months[ $matches[2] ] ?? 0;
+			$end_month   = $months[ $matches[4] ] ?? 0;
+
+			if ( $start_month > 0 && $end_month > 0 ) {
+				return [
+					'date_start' => sprintf( '%04d-%02d-%02d', (int) $matches[5], $start_month, (int) $matches[1] ),
+					'date_end'   => sprintf( '%04d-%02d-%02d', (int) $matches[5], $end_month, (int) $matches[3] ),
+				];
+			}
+		}
+
+		if ( preg_match( '~(\d{1,2})\.\s*([[:alpha:]]+)\s+(\d{4})~u', $normalized_ascii, $matches ) ) {
+			$month = $months[ $matches[2] ] ?? 0;
+
+			if ( $month > 0 ) {
+				$date = sprintf( '%04d-%02d-%02d', (int) $matches[3], $month, (int) $matches[1] );
+
+				return [
+					'date_start' => $date,
+					'date_end'   => 'kurz' === $term_type ? $date : $date,
+				];
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Parse dates from machine term key.
+	 *
+	 * @param string $term_type kurz|zkouska
+	 * @param string $value Option value.
+	 * @return array<string, string>|null
+	 */
+	private function parse_dates_from_term_key( string $term_type, string $value ): ?array {
+		if ( ! preg_match( '~^(kurz|zkouska)_(\d{4})_(\d{2})_(\d{2})(?:_(\d{2}))?$~', $value, $matches ) ) {
+			return null;
+		}
+
+		$prefix    = (string) $matches[1];
+		$date_start = sprintf( '%04d-%02d-%02d', (int) $matches[2], (int) $matches[3], (int) $matches[4] );
+		$date_end   = $date_start;
+
+		if ( 'kurz' === $prefix && ! empty( $matches[5] ) ) {
+			$date_end = sprintf( '%04d-%02d-%02d', (int) $matches[2], (int) $matches[3], (int) $matches[5] );
+		}
+
+		if ( ( 'kurz' === $term_type && 'kurz' !== $prefix ) || ( 'zkouska' === $term_type && 'zkouska' !== $prefix ) ) {
+			return null;
+		}
+
+		return [
+			'date_start' => $date_start,
+			'date_end'   => $date_end,
+		];
+	}
+
+	/**
+	 * Determine imported term key.
+	 *
+	 * @param string      $term_type kurz|zkouska
+	 * @param string      $value Option value.
+	 * @param string      $date_start Date start.
+	 * @param string|null $date_end Date end.
+	 * @return string
+	 */
+	private function determine_import_term_key( string $term_type, string $value, string $date_start, ?string $date_end ): string {
+		if ( preg_match( '~^(kurz|zkouska)_\d{4}_\d{2}_\d{2}(?:_\d{2})?$~', $value ) ) {
+			return $value;
+		}
+
+		return Hlavas_Terms_Label_Builder::build_key( $term_type, $date_start, $date_end );
+	}
+
+	/**
+	 * Normalize string to ASCII lowercase for matching Czech month names.
+	 *
+	 * @param string $value Input string.
+	 * @return string
+	 */
+	private function normalize_ascii( string $value ): string {
+		$value = remove_accents( wp_strip_all_tags( $value ) );
+		$value = preg_replace( '/\s+/u', ' ', trim( $value ) );
+
+		return mb_strtolower( (string) $value );
+	}
+
+	/**
+	 * Map Czech month names to month numbers.
+	 *
+	 * @return array<string, int>
+	 */
+	private function get_month_number_map(): array {
+		return [
+			'ledna'     => 1,
+			'unora'     => 2,
+			'brezna'    => 3,
+			'dubna'     => 4,
+			'kvetna'    => 5,
+			'cervna'    => 6,
+			'cervence'  => 7,
+			'srpna'     => 8,
+			'zari'      => 9,
+			'rijna'     => 10,
+			'listopadu' => 11,
+			'prosince'  => 12,
+		];
+	}
+
+	/**
 	 * Get syncable terms filtered optionally by qualification type IDs.
 	 *
 	 * @param string         $term_type Term type.
@@ -880,6 +1302,31 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 */
 	private function find_field_path_by_aliases( array $fields, array $aliases ): ?array {
 		return $this->search_field_path_recursive( $fields, $aliases, [] );
+	}
+
+	/**
+	 * Get form-specific aliases enriched by manually configured mapping.
+	 *
+	 * @param int                $form_id Fluent Form ID.
+	 * @param string             $identifier Logical HLAVAS field identifier.
+	 * @param array<int, string> $default_aliases Default aliases.
+	 * @return array<int, string>
+	 */
+	private function get_aliases_for_form( int $form_id, string $identifier, array $default_aliases ): array {
+		return hlavas_terms_get_manual_field_aliases( $form_id, $identifier, $default_aliases );
+	}
+
+	/**
+	 * Get current manual mapping value for one logical field.
+	 *
+	 * @param int    $form_id Fluent Form ID.
+	 * @param string $identifier Logical field identifier.
+	 * @return string
+	 */
+	private function get_manual_mapping_value( int $form_id, string $identifier ): string {
+		$field_map = hlavas_terms_get_form_field_map( $form_id );
+
+		return trim( (string) ( $field_map[ sanitize_key( $identifier ) ] ?? '' ) );
 	}
 
 	/**

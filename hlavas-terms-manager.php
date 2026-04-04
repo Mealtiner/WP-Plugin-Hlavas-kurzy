@@ -37,6 +37,7 @@ define( 'HLAVAS_TERMS_OPTION_SYNC_LOG', 'hlavas_terms_sync_log' );
 define( 'HLAVAS_TERMS_OPTION_FORM_SYNC_LOG', 'hlavas_terms_form_sync_log' );
 define( 'HLAVAS_TERMS_OPTION_SYNC_VALUE_MODE', 'hlavas_terms_sync_value_mode' );
 define( 'HLAVAS_TERMS_OPTION_REPORT_EMAIL', 'hlavas_terms_report_email' );
+define( 'HLAVAS_TERMS_OPTION_FIELD_MAP', 'hlavas_terms_field_map' );
 define( 'HLAVAS_TERMS_OPTION_PLUGIN_VERSION', 'hlavas_terms_plugin_version' );
 define( 'HLAVAS_TERMS_DEFAULT_FORM_ID', 3 );
 define( 'HLAVAS_TERMS_PLUGIN_NAME', 'HLAVAS – Správa termínů kurzů a zkoušek' );
@@ -199,6 +200,103 @@ function hlavas_terms_get_report_email(): string {
 	$email   = sanitize_email( (string) get_option( HLAVAS_TERMS_OPTION_REPORT_EMAIL, $default ) );
 
 	return is_email( $email ) ? $email : $default;
+}
+
+/**
+ * Returns saved manual Fluent Forms field mapping.
+ *
+ * Structure:
+ * [
+ *   form_id => [
+ *     logical_identifier => ff_field_name_or_label
+ *   ]
+ * ]
+ *
+ * @return array<int, array<string, string>>
+ */
+function hlavas_terms_get_field_map(): array {
+	$map = get_option( HLAVAS_TERMS_OPTION_FIELD_MAP, [] );
+
+	if ( ! is_array( $map ) ) {
+		return [];
+	}
+
+	$output = [];
+
+	foreach ( $map as $form_id => $fields ) {
+		$form_id = (int) $form_id;
+
+		if ( $form_id <= 0 || ! is_array( $fields ) ) {
+			continue;
+		}
+
+		foreach ( $fields as $identifier => $value ) {
+			$identifier = sanitize_key( (string) $identifier );
+			$value      = trim( sanitize_text_field( (string) $value ) );
+
+			if ( '' === $identifier || '' === $value ) {
+				continue;
+			}
+
+			$output[ $form_id ][ $identifier ] = $value;
+		}
+	}
+
+	return $output;
+}
+
+/**
+ * Returns manual mapping for one specific form.
+ *
+ * @param int $form_id Fluent Form ID.
+ * @return array<string, string>
+ */
+function hlavas_terms_get_form_field_map( int $form_id ): array {
+	$map = hlavas_terms_get_field_map();
+
+	return $map[ $form_id ] ?? [];
+}
+
+/**
+ * Returns aliases enriched by a manually configured mapping for one form.
+ *
+ * The manual value is prepended so it is preferred over automatic fallbacks.
+ *
+ * @param int                $form_id Fluent Form ID.
+ * @param string             $identifier Logical HLAVAS field identifier.
+ * @param array<int, string> $default_aliases Default aliases.
+ * @return array<int, string>
+ */
+function hlavas_terms_get_manual_field_aliases( int $form_id, string $identifier, array $default_aliases = [] ): array {
+	$aliases           = [];
+	$manual_mappings   = hlavas_terms_get_form_field_map( $form_id );
+	$normalized_key    = sanitize_key( $identifier );
+	$manual_value      = trim( (string) ( $manual_mappings[ $normalized_key ] ?? '' ) );
+
+	if ( '' !== $manual_value ) {
+		$aliases[] = $manual_value;
+	}
+
+	$aliases[] = $identifier;
+
+	foreach ( $default_aliases as $alias ) {
+		$alias = trim( (string) $alias );
+
+		if ( '' !== $alias ) {
+			$aliases[] = $alias;
+		}
+	}
+
+	$aliases = array_values(
+		array_unique(
+			array_filter(
+				$aliases,
+				static fn( string $alias ): bool => '' !== $alias
+			)
+		)
+	);
+
+	return $aliases;
 }
 
 /**

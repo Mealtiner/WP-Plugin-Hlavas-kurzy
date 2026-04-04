@@ -12,6 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 /** @var array<int, object> $types */
 /** @var array<string, mixed> $settings_status */
 /** @var array<int, array<string, mixed>> $form_registry */
+/** @var array<int, array<string, mixed>> $form_mapping_sections */
+/** @var array<int, array<string, string>> $field_map */
 /** @var array<string, string> $sync_log */
 /** @var array<int, string> $activity_log_lines */
 ?>
@@ -24,6 +26,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	<?php if ( 'saved' === $message ) : ?>
 		<div class="notice notice-success is-dismissible"><p>Nastavení bylo uloženo.</p></div>
+	<?php elseif ( 'imported_from_ff' === $message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Import z Fluent Forms do pluginu byl dokončen. Vytvořeno: <?php echo esc_html( (string) absint( $_GET['created'] ?? 0 ) ); ?>, aktualizováno: <?php echo esc_html( (string) absint( $_GET['updated'] ?? 0 ) ); ?>, přeskočeno: <?php echo esc_html( (string) absint( $_GET['skipped'] ?? 0 ) ); ?>.</p></div>
+	<?php elseif ( 'import_from_ff_failed' === $message ) : ?>
+		<div class="notice notice-error is-dismissible"><p>Import z Fluent Forms do pluginu nenašel žádné použitelné termíny nebo selhal.</p></div>
+	<?php elseif ( 'exported_to_ff' === $message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Export z pluginu HLAVAS do Fluent Forms proběhl úspěšně.</p></div>
+	<?php elseif ( 'export_to_ff_failed' === $message ) : ?>
+		<div class="notice notice-error is-dismissible"><p>Export z pluginu HLAVAS do Fluent Forms selhal.</p></div>
 	<?php elseif ( 'imported' === $message ) : ?>
 		<div class="notice notice-success is-dismissible"><p>Záloha pluginu byla úspěšně importována.</p></div>
 	<?php elseif ( 'import_missing_file' === $message ) : ?>
@@ -42,6 +52,69 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 	<div class="hlavas-settings-grid">
 		<div class="hlavas-settings-main">
+			<div class="hlavas-settings-section">
+				<h2>Synchronizace mezi HLAVAS a Fluent Forms</h2>
+				<p class="description">
+					Synchronizace je rozdělená na dva samostatné směry. Nejdřív můžeš načíst stávající data z Fluent Forms do pluginu HLAVAS a teprve potom odeslat upravené termíny zpět do formulářů.
+				</p>
+
+				<div class="hlavas-settings-sync-tools">
+					<div class="hlavas-settings-sync-card">
+						<h3>Do pluginu HLAVAS</h3>
+						<p>
+							Načte aktuální volby z polí <code>termin_kurz</code> a <code>termin_zkouska</code> z nakonfigurovaných formulářů a vytvoří nebo aktualizuje termíny v pluginu.
+						</p>
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-settings' ) ); ?>">
+							<?php wp_nonce_field( 'hlavas_terms_import_from_ff', '_hlavas_ff_import_nonce' ); ?>
+							<p>
+								<label>
+									<input type="checkbox" name="hlavas_terms_import_replace_existing" value="1">
+									Při importu nahradit stávající termíny v pluginu
+								</label>
+							</p>
+							<p class="description">
+								Tento krok nepřepisuje samotné formuláře ve Fluent Forms.
+							</p>
+							<p>
+								<button
+									type="submit"
+									name="hlavas_terms_import_from_ff"
+									value="1"
+									class="button button-primary"
+									onclick="return confirm('Načíst termíny z Fluent Forms do pluginu HLAVAS?');"
+								>
+									Načíst z Fluent Forms do HLAVAS
+								</button>
+							</p>
+						</form>
+					</div>
+
+					<div class="hlavas-settings-sync-card">
+						<h3>Do pluginu FF</h3>
+						<p>
+							Odešle aktuální termíny z pluginu HLAVAS do Fluent Forms a aktualizuje volby termínů i jejich kapacity. Ostatní nastavení pole, včetně podmínek, ponechá beze změny.
+						</p>
+						<p class="description">
+							Pokud máš další logiky navázané na konkrétní hodnoty voleb, zkontroluj před exportem zvolený synchronizační režim níže.
+						</p>
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-settings' ) ); ?>">
+							<?php wp_nonce_field( 'hlavas_terms_export_to_ff', '_hlavas_ff_export_nonce' ); ?>
+							<p>
+								<button
+									type="submit"
+									name="hlavas_terms_export_to_ff"
+									value="1"
+									class="button"
+									onclick="return confirm('Odeslat aktuální termíny z pluginu HLAVAS do Fluent Forms? Tímto se přepíšou volby termínů ve formulářích.');"
+								>
+									Odeslat z HLAVAS do Fluent Forms
+								</button>
+							</p>
+						</form>
+					</div>
+				</div>
+			</div>
+
 			<div class="hlavas-settings-section">
 				<h2>Provozní nastavení</h2>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-settings' ) ); ?>">
@@ -74,7 +147,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 										<option value="label" <?php selected( $sync_value_mode, 'label' ); ?>>Legacy režim (label jako value)</option>
 									</select>
 									<p class="description">
-										Tento režim se předvyplní na stránce synchronizace a používá se i při rychlé synchronizaci z detailu termínu.
+										Tento režim se předvyplní na stránce synchronizace a používá se i při rychlé synchronizaci z detailu termínu. Pokud je na hodnoty voleb navázaná další logika ve Fluent Forms, bývá bezpečnější legacy režim.
 									</p>
 								</td>
 							</tr>
@@ -113,6 +186,136 @@ if ( ! defined( 'ABSPATH' ) ) {
 							</tr>
 						</tbody>
 					</table>
+
+					<details class="hlavas-settings-advanced">
+						<summary>Rozšíření nastavení: ruční mapování polí mezi HLAVAS a Fluent Forms</summary>
+						<div class="hlavas-settings-advanced-body">
+							<p class="description">
+								Tato část je určená pro případy, kdy jsou ve Fluent Forms pole přejmenovaná nebo používají jiné <code>name</code>, <code>admin_field_label</code> či viditelný label než plugin HLAVAS očekává automaticky.
+								Můžeš tu ručně nastavit mapování 1:1 pro konkrétní formulář. Plugin pak tuto vazbu použije při synchronizaci termínů, diagnostice i načítání účastníků.
+							</p>
+
+							<?php if ( empty( $form_mapping_sections ) ) : ?>
+								<p class="description">Zatím není k dispozici žádný formulář pro mapování polí.</p>
+							<?php else : ?>
+								<?php foreach ( $form_mapping_sections as $section ) : ?>
+									<?php
+									$section_form_id  = (int) ( $section['form_id'] ?? 0 );
+									$field_matches    = is_array( $section['field_matches'] ?? null ) ? $section['field_matches'] : [];
+									$field_catalog    = is_array( $section['field_catalog'] ?? null ) ? $section['field_catalog'] : [];
+									$datalist_id      = 'hlavas-map-suggestions-' . $section_form_id;
+									$manual_form_map  = $field_map[ $section_form_id ] ?? [];
+									?>
+									<div class="hlavas-settings-map-card">
+										<h3>
+											Formulář #<?php echo esc_html( (string) $section_form_id ); ?>
+											<?php if ( ! empty( $section['form_title'] ) ) : ?>
+												<span class="hlavas-subline"><?php echo esc_html( (string) $section['form_title'] ); ?></span>
+											<?php endif; ?>
+										</h3>
+
+										<?php if ( empty( $section['form_found'] ) ) : ?>
+											<p class="description">Formulář teď není dostupný, takže nejde zkontrolovat jeho pole. Ruční mapování se ale uloží a použije, jakmile bude formulář znovu k dispozici.</p>
+										<?php endif; ?>
+
+										<datalist id="<?php echo esc_attr( $datalist_id ); ?>">
+											<?php foreach ( $field_catalog as $catalog_item ) : ?>
+												<?php foreach ( [ 'name', 'admin_field_label', 'label' ] as $catalog_key ) : ?>
+													<?php $catalog_value = trim( (string) ( $catalog_item[ $catalog_key ] ?? '' ) ); ?>
+													<?php if ( '' !== $catalog_value ) : ?>
+														<option value="<?php echo esc_attr( $catalog_value ); ?>"></option>
+													<?php endif; ?>
+												<?php endforeach; ?>
+											<?php endforeach; ?>
+										</datalist>
+
+										<table class="widefat striped hlavas-settings-map-table">
+											<thead>
+												<tr>
+													<th>HLAVAS pole</th>
+													<th>Význam</th>
+													<th>Automaticky nalezeno</th>
+													<th>Ruční mapování 1:1</th>
+												</tr>
+											</thead>
+											<tbody>
+												<?php foreach ( $field_matches as $identifier => $match ) : ?>
+													<?php
+													$manual_value = (string) ( $manual_form_map[ sanitize_key( (string) $identifier ) ] ?? '' );
+													$found_field  = is_array( $match['field'] ?? null ) ? $match['field'] : [];
+													?>
+													<tr>
+														<td>
+															<strong><?php echo esc_html( (string) ( $match['label'] ?? $identifier ) ); ?></strong>
+															<div class="hlavas-subline"><code><?php echo esc_html( (string) $identifier ); ?></code></div>
+														</td>
+														<td><?php echo esc_html( (string) ( $match['description'] ?? '' ) ); ?></td>
+														<td>
+															<?php if ( ! empty( $match['found'] ) && ! empty( $found_field ) ) : ?>
+																<span class="hlavas-status-yes">Ano</span>
+																<div class="hlavas-subline">
+																	<?php if ( ! empty( $found_field['name'] ) ) : ?>
+																		<code><?php echo esc_html( (string) $found_field['name'] ); ?></code>
+																	<?php elseif ( ! empty( $found_field['admin_field_label'] ) ) : ?>
+																		<?php echo esc_html( (string) $found_field['admin_field_label'] ); ?>
+																	<?php else : ?>
+																		<?php echo esc_html( (string) ( $found_field['label'] ?? '' ) ); ?>
+																	<?php endif; ?>
+																</div>
+															<?php else : ?>
+																<span class="hlavas-status-no">Nenalezeno</span>
+															<?php endif; ?>
+														</td>
+														<td>
+															<input
+																type="text"
+																class="regular-text"
+																name="hlavas_terms_field_map[<?php echo esc_attr( (string) $section_form_id ); ?>][<?php echo esc_attr( (string) sanitize_key( (string) $identifier ) ); ?>]"
+																value="<?php echo esc_attr( $manual_value ); ?>"
+																list="<?php echo esc_attr( $datalist_id ); ?>"
+																placeholder="např. termin_kurz nebo Vyber termín kurzu"
+															>
+															<p class="description">
+																Zadej přesné <code>name</code>, <code>admin label</code> nebo viditelný label pole z tohoto formuláře.
+															</p>
+														</td>
+													</tr>
+												<?php endforeach; ?>
+											</tbody>
+										</table>
+
+										<details class="hlavas-settings-map-catalog">
+											<summary>Všechna nalezená pole formuláře</summary>
+											<?php if ( empty( $field_catalog ) ) : ?>
+												<p class="description">Katalog polí není k dispozici.</p>
+											<?php else : ?>
+												<table class="widefat striped hlavas-settings-map-catalog-table">
+													<thead>
+														<tr>
+															<th>Element</th>
+															<th><code>name</code></th>
+															<th><code>admin_field_label</code></th>
+															<th>Label</th>
+														</tr>
+													</thead>
+													<tbody>
+														<?php foreach ( $field_catalog as $catalog_item ) : ?>
+															<tr>
+																<td><?php echo esc_html( (string) ( $catalog_item['element'] ?? '' ) ); ?></td>
+																<td><code><?php echo esc_html( (string) ( $catalog_item['name'] ?? '' ) ); ?></code></td>
+																<td><?php echo esc_html( (string) ( $catalog_item['admin_field_label'] ?? '' ) ); ?></td>
+																<td><?php echo esc_html( (string) ( $catalog_item['label'] ?? '' ) ); ?></td>
+															</tr>
+														<?php endforeach; ?>
+													</tbody>
+												</table>
+											<?php endif; ?>
+										</details>
+									</div>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</div>
+					</details>
 
 					<p class="submit">
 						<button type="submit" name="hlavas_terms_save_settings" value="1" class="button button-primary">Uložit nastavení</button>
