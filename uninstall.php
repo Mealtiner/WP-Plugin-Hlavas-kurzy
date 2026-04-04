@@ -48,6 +48,7 @@ function hlavas_terms_uninstall_delete_options( wpdb $wpdb ): void {
 		'hlavas_terms_sync_value_mode',
 		'hlavas_terms_report_email',
 		'hlavas_terms_field_map',
+		'hlavas_terms_participant_term_map',
 		'hlavas_terms_db_version',
 		'hlavas_terms_plugin_version',
 	];

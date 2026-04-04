@@ -180,11 +180,13 @@ class Hlavas_Terms_Participant_Service {
 			: [];
 
 		$terms          = $this->repo->get_all();
+		$terms_by_id    = [];
 		$terms_by_key   = [];
 		$terms_by_label = [];
 		$terms_by_title = [];
 
 		foreach ( $terms as $term ) {
+			$terms_by_id[ (int) $term->id ] = $term;
 			$terms_by_key[ (string) $term->term_key ] = $term;
 
 			if ( ! empty( $term->label ) ) {
@@ -218,20 +220,24 @@ class Hlavas_Terms_Participant_Service {
 			$response = is_array( $response ) ? $response : [];
 			$details  = $details_by_submission[ (int) $row->id ] ?? [];
 			$context  = $this->resolve_submission_term_context( $response, $details, (int) $row->form_id );
+			$manual_term_id = hlavas_terms_get_manual_participant_term_id( (int) $row->id );
+			$manual_term    = $manual_term_id > 0 ? ( $terms_by_id[ $manual_term_id ] ?? null ) : null;
 
-			$term = $this->resolve_term_from_response(
-				$response,
-				$details,
-				(int) $row->form_id,
-				$terms,
-				$terms_by_key,
-				$terms_by_label,
-				$terms_by_title,
-				$form_type_map
-			);
+			$term = $manual_term instanceof \stdClass
+				? $manual_term
+				: $this->resolve_term_from_response(
+					$response,
+					$details,
+					(int) $row->form_id,
+					$terms,
+					$terms_by_key,
+					$terms_by_label,
+					$terms_by_title,
+					$form_type_map
+				);
 
 			$participant = $term
-				? $this->build_participant_record( $row, $response, $details, $term, (int) $row->form_id )
+				? $this->build_participant_record( $row, $response, $details, $term, (int) $row->form_id, null !== $manual_term )
 				: $this->build_unmatched_participant_record(
 					$row,
 					$response,
@@ -603,7 +609,7 @@ class Hlavas_Terms_Participant_Service {
 	 * @param object              $term Resolved term.
 	 * @return array<string, mixed>
 	 */
-	private function build_participant_record( object $row, array $response, array $details, object $term, int $form_id ): array {
+	private function build_participant_record( object $row, array $response, array $details, object $term, int $form_id, bool $is_manual_match = false ): array {
 		$participant_name = $this->extract_display_value( $response, 'name', $form_id, $details );
 		$address          = $this->extract_display_value( $response, 'address', $form_id, $details );
 		$participant_type = 'kurz' === $term->term_type ? 'Kurz' : 'Zkouška';
@@ -627,6 +633,7 @@ class Hlavas_Terms_Participant_Service {
 			'qualification'      => $qualification,
 			'qualification_code' => (string) ( $term->qualification_code ?? '' ),
 			'source_format'      => $this->detect_submission_source_format( $response ),
+			'is_manual_match'    => $is_manual_match,
 			'registration_type'  => $this->extract_display_value( $response, 'registration_type', $form_id, $details ),
 			'name'               => '' !== $participant_name ? $participant_name : 'Bez jména',
 			'birthdate'          => $this->extract_scalar_field( $response, 'birthdate', $form_id, $details ),
@@ -692,6 +699,7 @@ class Hlavas_Terms_Participant_Service {
 			'qualification'      => (string) $qualification['label'],
 			'qualification_code' => (string) $qualification['code'],
 			'source_format'      => $this->detect_submission_source_format( $response ),
+			'is_manual_match'    => false,
 			'registration_type'  => (string) ( $context['registration_type'] ?? '' ),
 			'name'               => '' !== $participant_name ? $participant_name : 'Bez jména',
 			'birthdate'          => $this->extract_scalar_field( $response, 'birthdate', $form_id, $details ),

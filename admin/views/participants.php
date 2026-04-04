@@ -122,6 +122,12 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 		<div class="notice notice-error is-dismissible"><p>Report se nepodařilo odeslat. Zkontroluj e-mail pro reporty v nastavení pluginu.</p></div>
 	<?php elseif ( 'report_failed' === $report_message ) : ?>
 		<div class="notice notice-error is-dismissible"><p>Report se nepodařilo vygenerovat.</p></div>
+	<?php elseif ( 'participant_term_pairing_saved' === $report_message ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Účastník byl úspěšně spárován se správným termínem.</p></div>
+	<?php elseif ( 'participant_term_pairing_cleared' === $report_message ) : ?>
+		<div class="notice notice-warning is-dismissible"><p>Ruční párování účastníka s termínem bylo zrušeno.</p></div>
+	<?php elseif ( 'participant_term_pairing_failed' === $report_message ) : ?>
+		<div class="notice notice-error is-dismissible"><p>Ruční párování se nepodařilo uložit.</p></div>
 	<?php endif; ?>
 
 	<form method="get" class="hlavas-filters hlavas-participants-filters">
@@ -273,6 +279,8 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 							</span>
 							<?php if ( ! empty( $participant['is_unmatched'] ) ) : ?>
 								<div class="hlavas-subline"><em>Historický / nepárovaný záznam</em></div>
+							<?php elseif ( ! empty( $participant['is_manual_match'] ) ) : ?>
+								<div class="hlavas-subline"><em>Ručně spárováno</em></div>
 							<?php endif; ?>
 							<div class="hlavas-subline"><?php echo esc_html( (string) $participant['qualification'] ); ?></div>
 							<?php if ( ! empty( $participant['registration_type'] ) ) : ?>
@@ -286,6 +294,49 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 							<?php endif; ?>
 							<?php if ( ! empty( $participant['term_key'] ) ) : ?>
 								<code class="hlavas-subline-code"><?php echo esc_html( (string) $participant['term_key'] ); ?></code>
+							<?php endif; ?>
+							<?php if ( ! empty( $participant['is_unmatched'] ) || ! empty( $participant['is_manual_match'] ) ) : ?>
+								<?php
+								$participant_term_options = array_values(
+									array_filter(
+										$terms,
+										static function ( object $term ) use ( $participant ): bool {
+											if ( (string) ( $term->term_type ?? '' ) !== (string) ( $participant['term_type'] ?? '' ) ) {
+												return false;
+											}
+
+											$participant_qualification_id = (int) ( $participant['qualification_id'] ?? 0 );
+
+											if ( $participant_qualification_id > 0 && (int) ( $term->qualification_type_id ?? 0 ) !== $participant_qualification_id ) {
+												return false;
+											}
+
+											return empty( $term->is_archived );
+										}
+									)
+								);
+								$current_manual_term_id = ! empty( $participant['is_manual_match'] ) ? (int) ( $participant['term_id'] ?? 0 ) : 0;
+								?>
+								<form method="post" class="hlavas-participant-pairing-form">
+									<?php wp_nonce_field( 'hlavas_participant_pairing', '_hlavas_participant_pairing_nonce' ); ?>
+									<input type="hidden" name="page" value="hlavas-terms-participants">
+									<input type="hidden" name="submission_id" value="<?php echo esc_attr( (string) $participant['submission_id'] ); ?>">
+									<input type="hidden" name="qualification_type_id" value="<?php echo esc_attr( (string) ( $filters['qualification_type_id'] ?? 0 ) ); ?>">
+									<input type="hidden" name="participant_term_type" value="<?php echo esc_attr( (string) ( $filters['term_type'] ?? '' ) ); ?>">
+									<input type="hidden" name="participant_term_id" value="<?php echo esc_attr( (string) ( $filters['term_id'] ?? 0 ) ); ?>">
+									<input type="hidden" name="participant_sort_by" value="<?php echo esc_attr( (string) ( $filters['sort_by'] ?? 'created_at' ) ); ?>">
+									<input type="hidden" name="participant_sort_order" value="<?php echo esc_attr( (string) ( $filters['sort_order'] ?? 'desc' ) ); ?>">
+									<select name="manual_term_id">
+										<option value="0"><?php echo esc_html( ! empty( $participant['is_manual_match'] ) ? 'Zrušit ruční párování' : 'Vyber správný termín' ); ?></option>
+										<?php foreach ( $participant_term_options as $term_option ) : ?>
+											<?php $term_option_title = ! empty( $term_option->title ) ? (string) $term_option->title : (string) $term_option->label; ?>
+											<option value="<?php echo esc_attr( (string) $term_option->id ); ?>" <?php selected( $current_manual_term_id, (int) $term_option->id ); ?>>
+												<?php echo esc_html( $term_option_title ); ?>
+											</option>
+										<?php endforeach; ?>
+									</select>
+									<button type="submit" name="hlavas_participant_term_pairing_save" value="1" class="button button-small">Uložit párování</button>
+								</form>
 							<?php endif; ?>
 						</td>
 						<td class="column-created">

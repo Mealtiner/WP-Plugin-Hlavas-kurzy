@@ -377,6 +377,13 @@ class Hlavas_Terms_Admin {
 		}
 
 		if (
+			isset( $_POST['hlavas_participant_term_pairing_save'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_participant_pairing_nonce'] ?? '' ) ), 'hlavas_participant_pairing' )
+		) {
+			$this->handle_participant_term_pairing_save();
+		}
+
+		if (
 			isset( $_POST['hlavas_terms_save_settings'] ) &&
 			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_settings_nonce'] ?? '' ) ), 'hlavas_terms_settings' )
 		) {
@@ -1578,6 +1585,85 @@ class Hlavas_Terms_Admin {
 
 		wp_safe_redirect( admin_url( 'admin.php?page=hlavas-terms-sync' ) );
 		exit;
+	}
+
+	/**
+	 * Save manual participant -> term pairing override.
+	 *
+	 * @return void
+	 */
+	private function handle_participant_term_pairing_save(): void {
+		$submission_id = absint( $_POST['submission_id'] ?? 0 );
+		$term_id       = absint( $_POST['manual_term_id'] ?? 0 );
+		$term          = $term_id > 0 ? $this->repo->find( $term_id ) : null;
+		$message       = 'participant_term_pairing_saved';
+
+		if ( $submission_id <= 0 ) {
+			$message = 'participant_term_pairing_failed';
+		} elseif ( $term_id > 0 && ! $term ) {
+			$message = 'participant_term_pairing_failed';
+		} elseif ( $term_id > 0 ) {
+			hlavas_terms_set_manual_participant_term_id( $submission_id, $term_id );
+			hlavas_terms_log_event(
+				'participant_term_paired',
+				'Účastník byl ručně spárován s termínem.',
+				[
+					'submission_id' => $submission_id,
+					'term_id'       => $term_id,
+					'term_key'      => (string) ( $term->term_key ?? '' ),
+					'term_title'    => (string) ( $term->title ?? $term->label ?? '' ),
+				]
+			);
+		} else {
+			hlavas_terms_clear_manual_participant_term_id( $submission_id );
+			$message = 'participant_term_pairing_cleared';
+			hlavas_terms_log_event(
+				'participant_term_pairing_cleared',
+				'Ruční párování účastníka s termínem bylo zrušeno.',
+				[
+					'submission_id' => $submission_id,
+				],
+				'warning'
+			);
+		}
+
+		wp_safe_redirect( $this->get_participants_redirect_url( $message ) );
+		exit;
+	}
+
+	/**
+	 * Build redirect URL back to participants page while preserving filters.
+	 *
+	 * @param string $message Message code.
+	 * @return string
+	 */
+	private function get_participants_redirect_url( string $message ): string {
+		$args = [
+			'page'           => 'hlavas-terms-participants',
+			'report_message' => $message,
+		];
+
+		if ( isset( $_REQUEST['qualification_type_id'] ) && absint( $_REQUEST['qualification_type_id'] ) > 0 ) {
+			$args['qualification_type_id'] = absint( $_REQUEST['qualification_type_id'] );
+		}
+
+		if ( isset( $_REQUEST['participant_term_type'] ) && '' !== (string) $_REQUEST['participant_term_type'] ) {
+			$args['participant_term_type'] = sanitize_text_field( wp_unslash( $_REQUEST['participant_term_type'] ) );
+		}
+
+		if ( isset( $_REQUEST['participant_term_id'] ) && absint( $_REQUEST['participant_term_id'] ) > 0 ) {
+			$args['participant_term_id'] = absint( $_REQUEST['participant_term_id'] );
+		}
+
+		if ( isset( $_REQUEST['participant_sort_by'] ) && '' !== (string) $_REQUEST['participant_sort_by'] ) {
+			$args['participant_sort_by'] = sanitize_key( (string) $_REQUEST['participant_sort_by'] );
+		}
+
+		if ( isset( $_REQUEST['participant_sort_order'] ) && '' !== (string) $_REQUEST['participant_sort_order'] ) {
+			$args['participant_sort_order'] = sanitize_key( (string) $_REQUEST['participant_sort_order'] );
+		}
+
+		return admin_url( 'admin.php?' . http_build_query( $args ) );
 	}
 
 	/**

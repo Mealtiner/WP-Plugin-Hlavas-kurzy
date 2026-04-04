@@ -3,7 +3,7 @@
  * Plugin Name: HLAVAS – Správa termínů kurzů a zkoušek
  * Plugin URI:  https://hlavas.cz
  * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms pro projekt HLAVAS.cz realizovaný Jihomoravskou radou dětí a mládeže (JRDM).
- * Version:     1.2.6
+ * Version:     1.2.7
  * Author:      Michal "Mealtiner" Truhlář
  * Author URI:  https://mealtiner.cz
  * Text Domain: hlavas-terms
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Plugin constants.
  */
-define( 'HLAVAS_TERMS_VERSION', '1.2.6' );
+define( 'HLAVAS_TERMS_VERSION', '1.2.7' );
 define( 'HLAVAS_TERMS_FILE', __FILE__ );
 define( 'HLAVAS_TERMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HLAVAS_TERMS_URL', plugin_dir_url( __FILE__ ) );
@@ -38,6 +38,7 @@ define( 'HLAVAS_TERMS_OPTION_FORM_SYNC_LOG', 'hlavas_terms_form_sync_log' );
 define( 'HLAVAS_TERMS_OPTION_SYNC_VALUE_MODE', 'hlavas_terms_sync_value_mode' );
 define( 'HLAVAS_TERMS_OPTION_REPORT_EMAIL', 'hlavas_terms_report_email' );
 define( 'HLAVAS_TERMS_OPTION_FIELD_MAP', 'hlavas_terms_field_map' );
+define( 'HLAVAS_TERMS_OPTION_PARTICIPANT_TERM_MAP', 'hlavas_terms_participant_term_map' );
 define( 'HLAVAS_TERMS_OPTION_PLUGIN_VERSION', 'hlavas_terms_plugin_version' );
 define( 'HLAVAS_TERMS_DEFAULT_FORM_ID', 3 );
 define( 'HLAVAS_TERMS_PLUGIN_NAME', 'HLAVAS – Správa termínů kurzů a zkoušek' );
@@ -255,6 +256,76 @@ function hlavas_terms_get_form_field_map( int $form_id ): array {
 	$map = hlavas_terms_get_field_map();
 
 	return $map[ $form_id ] ?? [];
+}
+
+/**
+ * Returns manual participant-term pairing overrides keyed by submission ID.
+ *
+ * @return array<int, int>
+ */
+function hlavas_terms_get_participant_term_map(): array {
+	$map = get_option( HLAVAS_TERMS_OPTION_PARTICIPANT_TERM_MAP, [] );
+
+	if ( ! is_array( $map ) ) {
+		return [];
+	}
+
+	$output = [];
+
+	foreach ( $map as $submission_id => $term_id ) {
+		$submission_id = (int) $submission_id;
+		$term_id       = (int) $term_id;
+
+		if ( $submission_id > 0 && $term_id > 0 ) {
+			$output[ $submission_id ] = $term_id;
+		}
+	}
+
+	return $output;
+}
+
+/**
+ * Returns manual paired term ID for one participant submission.
+ *
+ * @param int $submission_id Fluent Forms submission ID.
+ * @return int
+ */
+function hlavas_terms_get_manual_participant_term_id( int $submission_id ): int {
+	$map = hlavas_terms_get_participant_term_map();
+
+	return (int) ( $map[ $submission_id ] ?? 0 );
+}
+
+/**
+ * Saves one manual participant-term pairing override.
+ *
+ * @param int $submission_id Fluent Forms submission ID.
+ * @param int $term_id Plugin term ID.
+ * @return void
+ */
+function hlavas_terms_set_manual_participant_term_id( int $submission_id, int $term_id ): void {
+	$map = hlavas_terms_get_participant_term_map();
+
+	if ( $submission_id > 0 && $term_id > 0 ) {
+		$map[ $submission_id ] = $term_id;
+	}
+
+	update_option( HLAVAS_TERMS_OPTION_PARTICIPANT_TERM_MAP, $map, false );
+}
+
+/**
+ * Removes one manual participant-term pairing override.
+ *
+ * @param int $submission_id Fluent Forms submission ID.
+ * @return void
+ */
+function hlavas_terms_clear_manual_participant_term_id( int $submission_id ): void {
+	$map = hlavas_terms_get_participant_term_map();
+
+	if ( isset( $map[ $submission_id ] ) ) {
+		unset( $map[ $submission_id ] );
+		update_option( HLAVAS_TERMS_OPTION_PARTICIPANT_TERM_MAP, $map, false );
+	}
 }
 
 /**

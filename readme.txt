@@ -2,8 +2,8 @@
 Contributors: hlavas
 Requires at least: 6.0
 Tested up to: 6.7
-Requires PHP: 8.0
-Stable tag: 1.2.5
+Requires PHP: 8.4
+Stable tag: 1.2.6
 License: GPLv2 or later
 
 Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms.
