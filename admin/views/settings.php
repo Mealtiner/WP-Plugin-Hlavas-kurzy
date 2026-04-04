@@ -440,6 +440,61 @@ if ( ! defined( 'ABSPATH' ) ) {
 		</div>
 
 		<div class="hlavas-settings-side">
+
+			<div class="hlavas-settings-section hlavas-shortcodes-reference">
+				<h2>Shortcodes pro frontend</h2>
+				<p class="description">
+					Vkládej shortcodes do stránek, článků nebo page builderů (Elementor, Divi, Bricks, Gutenberg). Zobrazují pouze veřejné informace — žádná osobní data účastníků.
+				</p>
+
+				<div class="hlavas-shortcode-card">
+					<div class="hlavas-shortcode-tag"><code>[hlavas_terms]</code></div>
+					<p class="hlavas-shortcode-desc">Tabulka nadcházejících termínů s kapacitami.</p>
+					<table class="hlavas-shortcode-attrs">
+						<thead><tr><th>Atribut</th><th>Hodnoty</th><th>Výchozí</th></tr></thead>
+						<tbody>
+							<tr><td><code>type</code></td><td><code>kurz</code> | <code>zkouska</code> | <code>all</code></td><td><code>all</code></td></tr>
+							<tr><td><code>show</code></td><td><code>upcoming</code> | <code>all</code></td><td><code>upcoming</code></td></tr>
+							<tr><td><code>limit</code></td><td>číslo</td><td><code>0</code> (vše)</td></tr>
+							<tr><td><code>show_capacity</code></td><td><code>yes</code> | <code>no</code></td><td><code>yes</code></td></tr>
+							<tr><td><code>qualification</code></td><td>type_key</td><td>— (vše)</td></tr>
+							<tr><td><code>class</code></td><td>CSS třída</td><td>—</td></tr>
+						</tbody>
+					</table>
+					<p class="hlavas-shortcode-example"><strong>Příklady:</strong></p>
+					<code class="hlavas-shortcode-snippet">[hlavas_terms type="kurz" limit="5"]</code>
+					<code class="hlavas-shortcode-snippet">[hlavas_terms type="zkouska" show_capacity="no"]</code>
+				</div>
+
+				<div class="hlavas-shortcode-card">
+					<div class="hlavas-shortcode-tag"><code>[hlavas_term_capacity]</code></div>
+					<p class="hlavas-shortcode-desc">Odznak volných míst pro konkrétní termín.</p>
+					<table class="hlavas-shortcode-attrs">
+						<thead><tr><th>Atribut</th><th>Hodnoty</th><th>Výchozí</th></tr></thead>
+						<tbody>
+							<tr><td><code>term_key</code></td><td>klíč termínu</td><td>— (povinné)</td></tr>
+							<tr><td><code>format</code></td><td><code>badge</code> | <code>text</code> | <code>number</code></td><td><code>badge</code></td></tr>
+						</tbody>
+					</table>
+					<code class="hlavas-shortcode-snippet">[hlavas_term_capacity term_key="kurz_2026_05_15_17"]</code>
+					<code class="hlavas-shortcode-snippet">[hlavas_term_capacity term_key="kurz_2026_05_15_17" format="text"]</code>
+				</div>
+
+				<div class="hlavas-shortcode-card">
+					<div class="hlavas-shortcode-tag"><code>[hlavas_waitlist]</code></div>
+					<p class="hlavas-shortcode-desc">Formulář čekací listiny — zobrazí se automaticky, když je termín plný. Ukládá jméno a e-mail se souhlasem GDPR.</p>
+					<table class="hlavas-shortcode-attrs">
+						<thead><tr><th>Atribut</th><th>Hodnoty</th><th>Výchozí</th></tr></thead>
+						<tbody>
+							<tr><td><code>term_key</code></td><td>klíč termínu</td><td>— (povinné)</td></tr>
+							<tr><td><code>show_always</code></td><td><code>yes</code> | <code>no</code></td><td><code>no</code></td></tr>
+						</tbody>
+					</table>
+					<code class="hlavas-shortcode-snippet">[hlavas_waitlist term_key="kurz_2026_05_15_17"]</code>
+					<p class="description" style="margin-top:6px;">Záznamy čekací listiny jsou uloženy v databázi a přístupné pouze v adminu.</p>
+				</div>
+			</div>
+
 			<div class="hlavas-settings-section">
 				<h2>Servis a údržba</h2>
 				<p>

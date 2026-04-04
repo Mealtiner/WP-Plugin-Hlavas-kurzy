@@ -15,6 +15,10 @@ if ( ! class_exists( 'Hlavas_Terms_Qualification_Type_Repository', false ) ) {
 	require_once __DIR__ . '/class-qualification-type-repository.php';
 }
 
+if ( ! class_exists( 'Hlavas_Terms_Availability_Service', false ) ) {
+	require_once __DIR__ . '/class-availability-service.php';
+}
+
 class Hlavas_Terms_Fluent_Sync_Service {
 
 	/**
@@ -30,6 +34,13 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 * @var Hlavas_Terms_Qualification_Type_Repository
 	 */
 	private Hlavas_Terms_Qualification_Type_Repository $type_repo;
+
+	/**
+	 * Availability service — used to compute remaining capacity during sync.
+	 *
+	 * @var Hlavas_Terms_Availability_Service
+	 */
+	private Hlavas_Terms_Availability_Service $availability;
 
 	/**
 	 * Fields that receive synchronized term options.
@@ -125,10 +136,12 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 */
 	public function __construct(
 		?Hlavas_Terms_Repository $repo = null,
-		?Hlavas_Terms_Qualification_Type_Repository $type_repo = null
+		?Hlavas_Terms_Qualification_Type_Repository $type_repo = null,
+		?Hlavas_Terms_Availability_Service $availability = null
 	) {
-		$this->repo      = $repo ?? new Hlavas_Terms_Repository();
-		$this->type_repo = $type_repo ?? new Hlavas_Terms_Qualification_Type_Repository();
+		$this->repo         = $repo ?? new Hlavas_Terms_Repository();
+		$this->type_repo    = $type_repo ?? new Hlavas_Terms_Qualification_Type_Repository();
+		$this->availability = $availability ?? new Hlavas_Terms_Availability_Service( $this->repo );
 	}
 
 	/**
@@ -847,14 +860,21 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			$options = [];
 
 			foreach ( $target['terms'] as $term ) {
-				$value = 'label' === $value_mode ? (string) $term->label : (string) $term->term_key;
+				$value    = 'label' === $value_mode ? (string) $term->label : (string) $term->term_key;
+				$capacity = (int) $term->capacity;
+
+				// Use remaining spots (capacity − already enrolled) so that
+				// synchronization never resets a partially-filled inventory back
+				// to the full capacity in Fluent Forms.
+				$enrolled  = $this->availability->count_enrollments( (string) $term->term_key );
+				$remaining = max( 0, $capacity - $enrolled );
 
 				$options[] = [
 					'label'      => (string) $term->label,
 					'value'      => $value,
-					'calc_value' => (string) (int) $term->capacity,
+					'calc_value' => (string) $remaining,
 					'image'      => '',
-					'quantity'   => (int) $term->capacity,
+					'quantity'   => $remaining,
 				];
 
 				$synced_term_ids[] = (int) $term->id;

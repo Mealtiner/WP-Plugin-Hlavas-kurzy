@@ -8,7 +8,8 @@
       "Bash(powershell -Command ':*)",
       "Bash(php -r \"echo PHP_VERSION;\")",
       "Bash(powershell -Command \"Get-ChildItem -Path 'C:\\\\Users\\\\mealt\\\\Local Sites' -Recurse -Filter 'php.exe' -ErrorAction SilentlyContinue | Select-Object FullName -First 5\")",
-      "Bash(\"C:\\\\Users\\\\mealt\\\\AppData\\\\Roaming\\\\Local\\\\lightning-services\\\\php-8.4.16+1\\\\bin\\\\win64\\\\php.exe\" \"c:\\\\Users\\\\mealt\\\\Local Sites\\\\hlavascz\\\\app\\\\public\\\\wp-content\\\\plugins\\\\hlavas-kurzy\\\\_build_zip.php\")"
+      "Bash(\"C:\\\\Users\\\\mealt\\\\AppData\\\\Roaming\\\\Local\\\\lightning-services\\\\php-8.4.16+1\\\\bin\\\\win64\\\\php.exe\" \"c:\\\\Users\\\\mealt\\\\Local Sites\\\\hlavascz\\\\app\\\\public\\\\wp-content\\\\plugins\\\\hlavas-kurzy\\\\_build_zip.php\")",
+      "Bash(grep -n 'count_enrollments\\\\|remaining\\\\|$enrolled' includes/class-fluent-sync-service.php)"
     ]
   }
 }

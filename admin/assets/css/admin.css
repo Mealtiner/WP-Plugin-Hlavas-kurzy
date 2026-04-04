@@ -856,3 +856,64 @@
 @media (max-width: 960px) {
     .hlavas-docs-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------
+ * Shortcode reference (settings page sidebar)
+ * ------------------------------------------------------------- */
+.hlavas-shortcodes-reference .description {
+    margin-bottom: 14px;
+}
+.hlavas-shortcode-card {
+    background: #f8fafc;
+    border: 1px solid #dbe3ea;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+}
+.hlavas-shortcode-card:last-child { margin-bottom: 0; }
+.hlavas-shortcode-tag code {
+    font-size: 13px;
+    font-weight: 700;
+    background: #e8f0fb;
+    color: #1a4480;
+    padding: 3px 8px;
+    border-radius: 4px;
+}
+.hlavas-shortcode-desc {
+    margin: 6px 0 10px;
+    font-size: 12px;
+    color: #4b5563;
+}
+.hlavas-shortcode-attrs {
+    width: 100%;
+    font-size: 11px;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+    table-layout: auto !important;
+}
+.hlavas-shortcode-attrs th,
+.hlavas-shortcode-attrs td {
+    padding: 4px 6px;
+    border: 1px solid #e5e7eb;
+    text-align: left;
+    vertical-align: top;
+}
+.hlavas-shortcode-attrs thead th {
+    background: #f3f4f6;
+    font-weight: 600;
+}
+.hlavas-shortcode-example {
+    font-size: 11px;
+    margin: 0 0 4px;
+    color: #374151;
+}
+.hlavas-shortcode-snippet {
+    display: block;
+    background: #1e2937;
+    color: #93c5fd;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    margin-bottom: 5px;
+    word-break: break-all;
+}

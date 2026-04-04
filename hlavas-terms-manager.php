@@ -3,7 +3,7 @@
  * Plugin Name: HLAVAS – Správa termínů kurzů a zkoušek
  * Plugin URI:  https://hlavas.cz
  * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms pro projekt HLAVAS.cz realizovaný Jihomoravskou radou dětí a mládeže (JRDM).
- * Version:     1.2.2
+ * Version:     1.2.5
  * Author:      Michal "Mealtiner" Truhlář
  * Author URI:  https://mealtiner.cz
  * Text Domain: hlavas-terms
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Plugin constants.
  */
-define( 'HLAVAS_TERMS_VERSION', '1.2.2' );
+define( 'HLAVAS_TERMS_VERSION', '1.2.5' );
 define( 'HLAVAS_TERMS_FILE', __FILE__ );
 define( 'HLAVAS_TERMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HLAVAS_TERMS_URL', plugin_dir_url( __FILE__ ) );
@@ -554,6 +554,50 @@ spl_autoload_register(
 );
 
 /**
+ * Schedule plugin WP-Cron events if not already scheduled.
+ *
+ * @return void
+ */
+function hlavas_terms_schedule_cron(): void {
+	if ( ! wp_next_scheduled( 'hlavas_terms_auto_archive' ) ) {
+		wp_schedule_event( strtotime( 'tomorrow midnight' ), 'daily', 'hlavas_terms_auto_archive' );
+	}
+}
+
+/**
+ * Unschedule all plugin WP-Cron events.
+ *
+ * @return void
+ */
+function hlavas_terms_unschedule_cron(): void {
+	$timestamp = wp_next_scheduled( 'hlavas_terms_auto_archive' );
+
+	if ( $timestamp ) {
+		wp_unschedule_event( $timestamp, 'hlavas_terms_auto_archive' );
+	}
+}
+
+/**
+ * Cron callback: archive terms whose end date is in the past.
+ *
+ * @return void
+ */
+function hlavas_terms_run_auto_archive(): void {
+	require_once HLAVAS_TERMS_DIR . 'includes/class-repository.php';
+	$repo    = new Hlavas_Terms_Repository();
+	$count   = $repo->archive_past_terms();
+
+	if ( $count > 0 ) {
+		hlavas_terms_log_event(
+			'auto_archive',
+			'Automaticky archivovano ' . $count . ' terminu s propadlym datem.',
+			[ 'archived_count' => $count ]
+		);
+	}
+}
+add_action( 'hlavas_terms_auto_archive', 'hlavas_terms_run_auto_archive' );
+
+/**
  * Runs on plugin activation.
  *
  * @return void
@@ -562,6 +606,7 @@ function hlavas_terms_activate(): void {
 	require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
 	Hlavas_Terms_Activator::activate( hlavas_terms_get_installed_version() );
 	hlavas_terms_ensure_log_storage();
+	hlavas_terms_schedule_cron();
 	hlavas_terms_log_event( 'plugin_activated', 'Plugin byl aktivovan.', [], 'info' );
 }
 register_activation_hook( __FILE__, 'hlavas_terms_activate' );
@@ -573,6 +618,7 @@ register_activation_hook( __FILE__, 'hlavas_terms_activate' );
  */
 function hlavas_terms_deactivate(): void {
 	delete_transient( 'hlavas_terms_sync_preview' );
+	hlavas_terms_unschedule_cron();
 	hlavas_terms_log_event( 'plugin_deactivated', 'Plugin byl deaktivovan.', [], 'warning' );
 }
 register_deactivation_hook( __FILE__, 'hlavas_terms_deactivate' );
@@ -676,9 +722,13 @@ function hlavas_terms_boot_services(): void {
 	require_once HLAVAS_TERMS_DIR . 'includes/class-fluent-sync-service.php';
 	require_once HLAVAS_TERMS_DIR . 'includes/class-availability-service.php';
 	require_once HLAVAS_TERMS_DIR . 'includes/class-submit-validator.php';
+	require_once HLAVAS_TERMS_DIR . 'includes/class-shortcodes.php';
 
 	$validator = new Hlavas_Terms_Submit_Validator();
 	$validator->register();
+
+	$shortcodes = new Hlavas_Terms_Shortcodes();
+	$shortcodes->register();
 }
 
 /**

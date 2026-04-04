@@ -308,6 +308,36 @@ class Hlavas_Terms_Repository {
 	}
 
 	/**
+	 * Automatically archive all active, non-archived terms whose end date
+	 * (or start date for exams) is strictly in the past.
+	 *
+	 * Uses COALESCE(date_end, date_start) so single-day exam terms are
+	 * correctly handled. Terms that are already archived or inactive are
+	 * left untouched.
+	 *
+	 * @return int Number of terms archived.
+	 */
+	public function archive_past_terms(): int {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$today = current_time( 'Y-m-d' );
+
+		return (int) $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$this->table}
+				SET is_archived = 1,
+				    updated_at  = %s
+				WHERE is_archived = 0
+				  AND is_active   = 1
+				  AND COALESCE(date_end, date_start) < %s",
+				current_time( 'mysql' ),
+				$today
+			)
+		);
+	}
+
+	/**
 	 * Toggle front-end visibility.
 	 *
 	 * @param int $id Term ID.

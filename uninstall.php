@@ -66,11 +66,13 @@ function hlavas_terms_uninstall_delete_options( wpdb $wpdb ): void {
 			WHERE option_name LIKE %s
 				OR option_name LIKE %s
 				OR option_name LIKE %s
+				OR option_name LIKE %s
 				OR option_name LIKE %s",
 			'_transient_hlavas_term_sync_result_%',
 			'_transient_timeout_hlavas_term_sync_result_%',
 			'_transient_hlavas_terms_%',
-			'_transient_timeout_hlavas_terms_%'
+			'_transient_timeout_hlavas_terms_%',
+			'hlavas_waitlist_%'
 		)
 	);
 }
@@ -123,6 +125,9 @@ function hlavas_terms_uninstall_current_site(): void {
 	hlavas_terms_uninstall_drop_tables( $wpdb );
 	hlavas_terms_uninstall_delete_options( $wpdb );
 }
+
+// Remove scheduled cron events.
+wp_clear_scheduled_hook( 'hlavas_terms_auto_archive' );
 
 if ( is_multisite() ) {
 	$site_ids = get_sites(
