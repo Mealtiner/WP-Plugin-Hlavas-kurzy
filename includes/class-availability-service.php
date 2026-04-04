@@ -15,6 +15,10 @@ if ( ! class_exists( 'Hlavas_Terms_Repository', false ) ) {
 	require_once __DIR__ . '/class-repository.php';
 }
 
+if ( ! class_exists( 'Hlavas_Terms_Participant_Service', false ) ) {
+	require_once __DIR__ . '/class-participant-service.php';
+}
+
 class Hlavas_Terms_Availability_Service {
 
     /**
@@ -29,8 +33,18 @@ class Hlavas_Terms_Availability_Service {
 
     private Hlavas_Terms_Repository $repo;
 
-    public function __construct( ?Hlavas_Terms_Repository $repo = null ) {
-        $this->repo = $repo ?? new Hlavas_Terms_Repository();
+    private Hlavas_Terms_Participant_Service $participants;
+
+    /**
+     * Cached participant rows for this request.
+     *
+     * @var array<int, array<string, mixed>>|null
+     */
+    private ?array $participant_cache = null;
+
+    public function __construct( ?Hlavas_Terms_Repository $repo = null, ?Hlavas_Terms_Participant_Service $participants = null ) {
+        $this->repo         = $repo ?? new Hlavas_Terms_Repository();
+        $this->participants = $participants ?? new Hlavas_Terms_Participant_Service( $this->repo );
     }
 
     /**
@@ -46,56 +60,21 @@ class Hlavas_Terms_Availability_Service {
      * @return int Number of active enrollments.
      */
     public function count_enrollments( string $term_key ): int {
-        global $wpdb;
-        /** @var wpdb $wpdb */
+        $term = $this->repo->find_by_key( $term_key );
 
-        $entry_table      = $wpdb->prefix . 'fluentform_entry_details';
-        $submission_table = $wpdb->prefix . 'fluentform_submissions';
-
-        if ( ! $this->table_exists( $entry_table ) || ! $this->table_exists( $submission_table ) ) {
+        if ( ! $term ) {
             return 0;
         }
 
-        $form_ids = hlavas_terms_get_all_form_ids();
+        $count = 0;
 
-        // Also check legacy label value for backward compatibility.
-        $term            = $this->repo->find_by_key( $term_key );
-        $values_to_check = [ $term_key ];
-
-        if ( $term && $term->label ) {
-            $values_to_check[] = $term->label;
+        foreach ( $this->get_resolved_participants() as $participant ) {
+            if ( (int) ( $participant['term_id'] ?? 0 ) === (int) $term->id ) {
+                $count++;
+            }
         }
 
-        $form_placeholders  = implode( ',', array_fill( 0, count( $form_ids ), '%d' ) );
-        $field_placeholders = implode( ',', array_fill( 0, count( self::TERM_FIELDS ), '%s' ) );
-        $value_placeholders = implode( ',', array_fill( 0, count( $values_to_check ), '%s' ) );
-
-        // Count entries that:
-        // 1. Belong to any plugin-configured Fluent Form
-        // 2. Have field_name 'termin_kurz' or 'termin_zkouska'
-        // 3. Have field_value matching our term_key or legacy label
-        // 4. The parent submission is not trashed
-        $primary = (int) $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT COUNT(DISTINCT e.submission_id)
-                 FROM {$entry_table} e
-                 INNER JOIN {$submission_table} s ON e.submission_id = s.id
-                 WHERE e.form_id IN ({$form_placeholders})
-                   AND e.field_name IN ({$field_placeholders})
-                   AND e.field_value IN ({$value_placeholders})
-                   AND s.status != 'trashed'",
-                ...$form_ids,
-                ...self::TERM_FIELDS,
-                ...$values_to_check
-            )
-        );
-
-        if ( $primary > 0 ) {
-            return $primary;
-        }
-
-        // Some Fluent Forms setups do not fully populate entry_details for choice fields.
-        return $this->count_enrollments_from_responses( $term_key );
+        return $count;
     }
 
     /**
@@ -216,6 +195,22 @@ class Hlavas_Terms_Availability_Service {
         }
 
         return $report;
+    }
+
+    /**
+     * Load all resolved participant rows once per request.
+     *
+     * Historical Fluent Forms entries are resolved via the participant service,
+     * which already applies field mapping and fallback matching for older forms.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function get_resolved_participants(): array {
+        if ( null === $this->participant_cache ) {
+            $this->participant_cache = $this->participants->get_participants();
+        }
+
+        return $this->participant_cache;
     }
 
     /**

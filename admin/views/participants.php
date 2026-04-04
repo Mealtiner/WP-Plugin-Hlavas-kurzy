@@ -248,9 +248,19 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 							</details>
 						</td>
 						<td class="column-registration">
-							<span class="hlavas-badge <?php echo 'kurz' === $participant['term_type'] ? 'hlavas-badge-kurz' : 'hlavas-badge-zkouska'; ?>">
+							<?php
+							$badge_class = match ( (string) $participant['term_type'] ) {
+								'kurz'    => 'hlavas-badge-kurz',
+								'zkouska' => 'hlavas-badge-zkouska',
+								default   => '',
+							};
+							?>
+							<span class="hlavas-badge <?php echo esc_attr( $badge_class ); ?>">
 								<?php echo esc_html( (string) $participant['term_type_label'] ); ?>
 							</span>
+							<?php if ( ! empty( $participant['is_unmatched'] ) ) : ?>
+								<div class="hlavas-subline"><em>Historický / nepárovaný záznam</em></div>
+							<?php endif; ?>
 							<div class="hlavas-subline"><?php echo esc_html( (string) $participant['qualification'] ); ?></div>
 							<?php if ( ! empty( $participant['registration_type'] ) ) : ?>
 								<div class="hlavas-subline"><?php echo esc_html( (string) $participant['registration_type'] ); ?></div>
@@ -261,7 +271,9 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 							<?php if ( ! empty( $participant['term_label'] ) ) : ?>
 								<div class="hlavas-subline"><?php echo esc_html( (string) $participant['term_label'] ); ?></div>
 							<?php endif; ?>
-							<code class="hlavas-subline-code"><?php echo esc_html( (string) $participant['term_key'] ); ?></code>
+							<?php if ( ! empty( $participant['term_key'] ) ) : ?>
+								<code class="hlavas-subline-code"><?php echo esc_html( (string) $participant['term_key'] ); ?></code>
+							<?php endif; ?>
 						</td>
 						<td class="column-created">
 							<?php echo esc_html( (string) $participant['created_at'] ); ?>

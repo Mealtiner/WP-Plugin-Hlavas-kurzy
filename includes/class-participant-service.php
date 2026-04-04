@@ -46,12 +46,15 @@ class Hlavas_Terms_Participant_Service {
 		'registration_type' => [
 			'typ_prihlasky',
 			'kam_se_chces_prihlasit',
+			'input_radio',
 		],
 		'term_course'       => [
 			'termin_kurz',
+			'dropdown',
 		],
 		'term_exam'         => [
 			'termin_zkouska',
+			'dropdown_1',
 		],
 		'name'              => [
 			'Name',
@@ -60,33 +63,41 @@ class Hlavas_Terms_Participant_Service {
 		],
 		'birthdate'         => [
 			'narozeni',
+			'datetime',
 		],
 		'address'           => [
 			'Address',
 			'address',
+			'address_1',
 		],
 		'email'             => [
 			'ucastnik_email',
+			'email',
 			'Kam ti můžeme poslat potvrzení a materiály?',
 		],
 		'phone'             => [
 			'ucastnik_telefon',
+			'phone',
 			'A tvoje telefonní číslo?',
 		],
 		'payment_type'      => [
 			'typ_platby',
+			'input_radio_1',
 			'A teď k placení – kdo to vezme na sebe?',
 		],
 		'organization_name' => [
 			'nazev_organizace',
+			'input_text',
 			'Jak se tvoje organizace přesně jmenuje?',
 		],
 		'organization_ico'  => [
 			'ico_organizace',
+			'numeric_field',
 			'Budeme potřebovat vaše IČO.',
 		],
 		'invoice_email'     => [
 			'fakturacni_email',
+			'email_1',
 			'Kam máme fakturu poslat?',
 		],
 	];
@@ -206,6 +217,7 @@ class Hlavas_Terms_Participant_Service {
 			$response = json_decode( (string) $row->response, true );
 			$response = is_array( $response ) ? $response : [];
 			$details  = $details_by_submission[ (int) $row->id ] ?? [];
+			$context  = $this->resolve_submission_term_context( $response, $details, (int) $row->form_id );
 
 			$term = $this->resolve_term_from_response(
 				$response,
@@ -218,11 +230,17 @@ class Hlavas_Terms_Participant_Service {
 				$form_type_map
 			);
 
-			if ( ! $term ) {
-				continue;
-			}
-
-			$participant = $this->build_participant_record( $row, $response, $details, $term, (int) $row->form_id );
+			$participant = $term
+				? $this->build_participant_record( $row, $response, $details, $term, (int) $row->form_id )
+				: $this->build_unmatched_participant_record(
+					$row,
+					$response,
+					$details,
+					(int) $row->form_id,
+					$context,
+					$form_type_map,
+					$type_items
+				);
 
 			if ( ! $this->matches_filters( $participant, $filters ) ) {
 				continue;
@@ -478,16 +496,30 @@ class Hlavas_Terms_Participant_Service {
 		}
 
 		$qualification_code = $this->normalize_string( (string) ( $term->qualification_code ?? '' ) );
+		$qualification_name = $this->normalize_string( (string) ( $term->qualification_name ?? '' ) );
+		$date_matches       = 0;
 
 		if ( '' !== $qualification_code && str_contains( $normalized_value, $qualification_code ) ) {
 			$score += 20;
 		}
 
+		if ( '' !== $qualification_name && str_contains( $normalized_value, $qualification_name ) ) {
+			$score += 35;
+		}
+
 		foreach ( $this->get_term_match_strings( $term ) as $match_string ) {
 			if ( str_contains( $normalized_value, $match_string ) ) {
 				$score += 30;
-				break;
+				$date_matches++;
 			}
+		}
+
+		if ( $date_matches > 0 && '' !== $qualification_code && str_contains( $normalized_value, $qualification_code ) ) {
+			$score += 40;
+		}
+
+		if ( $date_matches > 0 && '' !== $qualification_name && str_contains( $normalized_value, $qualification_name ) ) {
+			$score += 30;
 		}
 
 		return $score;
@@ -604,6 +636,71 @@ class Hlavas_Terms_Participant_Service {
 			'organization_name'  => $this->extract_scalar_field( $response, 'organization_name', $form_id, $details ),
 			'organization_ico'   => $this->extract_scalar_field( $response, 'organization_ico', $form_id, $details ),
 			'invoice_email'      => $this->extract_scalar_field( $response, 'invoice_email', $form_id, $details ),
+			'is_unmatched'       => false,
+			'admin_url'          => admin_url(
+				'admin.php?page=fluent_forms&route=entries&form_id=' . (int) $row->form_id . '#/entries/' . (int) $row->id
+			),
+		];
+	}
+
+	/**
+	 * Build participant row even for historical entries without current term match.
+	 *
+	 * @param object                                      $row DB row.
+	 * @param array<string, mixed>                        $response Response payload.
+	 * @param array<string, mixed>                        $details Entry details.
+	 * @param int                                         $form_id Fluent Form ID.
+	 * @param array<string, string>                       $context Submission term context.
+	 * @param array<int, array<string, array<int, int>>>  $form_type_map Qualification map.
+	 * @param array<int, object>                          $type_items Qualification types.
+	 * @return array<string, mixed>
+	 */
+	private function build_unmatched_participant_record(
+		object $row,
+		array $response,
+		array $details,
+		int $form_id,
+		array $context,
+		array $form_type_map,
+		array $type_items
+	): array {
+		$participant_name = $this->extract_display_value( $response, 'name', $form_id, $details );
+		$address          = $this->extract_display_value( $response, 'address', $form_id, $details );
+		$term_type        = (string) ( $context['term_type'] ?? '' );
+		$term_type_label  = match ( $term_type ) {
+			'kurz'    => 'Kurz',
+			'zkouska' => 'Zkouška',
+			default   => 'Neurčeno',
+		};
+		$raw_term_value   = trim( (string) ( $context['raw_term_value'] ?? '' ) );
+		$qualification    = $this->resolve_unmatched_qualification( $context, $form_id, $form_type_map, $type_items );
+
+		return [
+			'submission_id'      => (int) $row->id,
+			'created_at'         => $this->format_datetime( (string) $row->created_at ),
+			'created_at_mysql'   => (string) $row->created_at,
+			'status'             => (string) $row->status,
+			'form_id'            => (int) $row->form_id,
+			'term_id'            => 0,
+			'term_type'          => $term_type,
+			'term_type_label'    => $term_type_label,
+			'term_title'         => '' !== $raw_term_value ? $raw_term_value : 'Historický / nepárovaný termín',
+			'term_label'         => 'Termín se zatím nepodařilo napárovat na aktuální záznam v pluginu.',
+			'term_key'           => '',
+			'qualification_id'   => (int) $qualification['id'],
+			'qualification'      => (string) $qualification['label'],
+			'qualification_code' => (string) $qualification['code'],
+			'registration_type'  => (string) ( $context['registration_type'] ?? '' ),
+			'name'               => '' !== $participant_name ? $participant_name : 'Bez jména',
+			'birthdate'          => $this->extract_scalar_field( $response, 'birthdate', $form_id, $details ),
+			'address'            => $address,
+			'email'              => $this->extract_scalar_field( $response, 'email', $form_id, $details ),
+			'phone'              => $this->extract_scalar_field( $response, 'phone', $form_id, $details ),
+			'payment_type'       => $this->extract_scalar_field( $response, 'payment_type', $form_id, $details ),
+			'organization_name'  => $this->extract_scalar_field( $response, 'organization_name', $form_id, $details ),
+			'organization_ico'   => $this->extract_scalar_field( $response, 'organization_ico', $form_id, $details ),
+			'invoice_email'      => $this->extract_scalar_field( $response, 'invoice_email', $form_id, $details ),
+			'is_unmatched'       => true,
 			'admin_url'          => admin_url(
 				'admin.php?page=fluent_forms&route=entries&form_id=' . (int) $row->form_id . '#/entries/' . (int) $row->id
 			),
@@ -655,6 +752,165 @@ class Hlavas_Terms_Participant_Service {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Resolve the most useful term context from one submission.
+	 *
+	 * @param array<string, mixed> $response Response payload.
+	 * @param array<string, mixed> $details Submission details.
+	 * @param int                  $form_id Fluent Form ID.
+	 * @return array<string, string>
+	 */
+	private function resolve_submission_term_context( array $response, array $details, int $form_id ): array {
+		$course_value      = $this->extract_scalar_field( $response, 'term_course', $form_id, $details );
+		$exam_value        = $this->extract_scalar_field( $response, 'term_exam', $form_id, $details );
+		$registration_type = $this->extract_display_value( $response, 'registration_type', $form_id, $details );
+		$term_type         = '';
+		$raw_term_value    = '';
+
+		if ( '' !== $course_value ) {
+			$term_type      = 'kurz';
+			$raw_term_value = $course_value;
+		} elseif ( '' !== $exam_value ) {
+			$term_type      = 'zkouska';
+			$raw_term_value = $exam_value;
+		} else {
+			$term_type = $this->infer_term_type_from_text( $registration_type );
+		}
+
+		return [
+			'term_type'         => $term_type,
+			'raw_term_value'    => $raw_term_value,
+			'registration_type' => $registration_type,
+		];
+	}
+
+	/**
+	 * Infer term type from user-facing submission text.
+	 *
+	 * @param string $value Source text.
+	 * @return string
+	 */
+	private function infer_term_type_from_text( string $value ): string {
+		$normalized = $this->normalize_string( $value );
+
+		if ( '' === $normalized ) {
+			return '';
+		}
+
+		if ( str_contains( $normalized, 'zkou' ) || str_contains( $normalized, 'certifik' ) ) {
+			return 'zkouska';
+		}
+
+		if ( str_contains( $normalized, 'kurz' ) || str_contains( $normalized, 'naucit' ) ) {
+			return 'kurz';
+		}
+
+		return '';
+	}
+
+	/**
+	 * Resolve qualification info for unmatched historical entry.
+	 *
+	 * @param array<string, string>                      $context Submission term context.
+	 * @param int                                        $form_id Fluent Form ID.
+	 * @param array<int, array<string, array<int, int>>> $form_type_map Qualification map.
+	 * @param array<int, object>                         $type_items Qualification types.
+	 * @return array{id:int, label:string, code:string}
+	 */
+	private function resolve_unmatched_qualification(
+		array $context,
+		int $form_id,
+		array $form_type_map,
+		array $type_items
+	): array {
+		$term_type = (string) ( $context['term_type'] ?? '' );
+
+		if ( '' !== $term_type ) {
+			$preferred_ids = $this->get_preferred_qualification_ids( $form_type_map, $form_id, $term_type );
+
+			if ( 1 === count( $preferred_ids ) ) {
+				$preferred_type = $this->find_qualification_type_by_id( $type_items, (int) $preferred_ids[0] );
+
+				if ( $preferred_type ) {
+					return $this->format_qualification_type_label( $preferred_type );
+				}
+			}
+		}
+
+		$haystack   = $this->normalize_string(
+			trim(
+				(string) ( $context['registration_type'] ?? '' ) . ' ' .
+				(string) ( $context['raw_term_value'] ?? '' )
+			)
+		);
+		$best_score = 0;
+		$best_type  = null;
+
+		foreach ( $type_items as $type_item ) {
+			$score = 0;
+			$code  = $this->normalize_string( (string) ( $type_item->accreditation_number ?? '' ) );
+			$name  = $this->normalize_string( (string) ( $type_item->name ?? '' ) );
+
+			if ( '' !== $code && str_contains( $haystack, $code ) ) {
+				$score += 100;
+			}
+
+			if ( '' !== $name && str_contains( $haystack, $name ) ) {
+				$score += 50;
+			}
+
+			if ( $score > $best_score ) {
+				$best_score = $score;
+				$best_type  = $type_item;
+			}
+		}
+
+		if ( $best_type && $best_score >= 60 ) {
+			return $this->format_qualification_type_label( $best_type );
+		}
+
+		return [
+			'id'    => 0,
+			'label' => 'Historický záznam / bez párování',
+			'code'  => '',
+		];
+	}
+
+	/**
+	 * Find one qualification type in preloaded collection.
+	 *
+	 * @param array<int, object> $type_items Qualification types.
+	 * @param int                $id Type ID.
+	 * @return object|null
+	 */
+	private function find_qualification_type_by_id( array $type_items, int $id ): ?object {
+		foreach ( $type_items as $type_item ) {
+			if ( (int) ( $type_item->id ?? 0 ) === $id ) {
+				return $type_item;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Format qualification type label for participant output.
+	 *
+	 * @param object $type_item Qualification type.
+	 * @return array{id:int, label:string, code:string}
+	 */
+	private function format_qualification_type_label( object $type_item ): array {
+		$code  = (string) ( $type_item->accreditation_number ?? '' );
+		$name  = (string) ( $type_item->name ?? '' );
+		$label = trim( ( '' !== $code ? $code . ' – ' : '' ) . $name );
+
+		return [
+			'id'    => (int) ( $type_item->id ?? 0 ),
+			'label' => '' !== $label ? $label : 'Bez návaznosti',
+			'code'  => $code,
+		];
 	}
 
 	/**
@@ -1061,6 +1317,17 @@ class Hlavas_Terms_Participant_Service {
 	 */
 	private function normalize_string( string $value ): string {
 		$value = wp_strip_all_tags( $value );
+		$value = strtr(
+			$value,
+			[
+				'–' => '-',
+				'—' => '-',
+				'−' => '-',
+				'‑' => '-',
+				' ' => ' ',
+			]
+		);
+		$value = preg_replace( '/\s*-\s*/u', ' - ', $value );
 		$value = preg_replace( '/\s+/u', ' ', trim( $value ) );
 
 		return mb_strtolower( (string) $value );
