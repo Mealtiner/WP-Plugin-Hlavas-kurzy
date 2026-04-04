@@ -626,6 +626,7 @@ class Hlavas_Terms_Participant_Service {
 			'qualification_id'   => (int) ( $term->qualification_type_id ?? 0 ),
 			'qualification'      => $qualification,
 			'qualification_code' => (string) ( $term->qualification_code ?? '' ),
+			'source_format'      => $this->detect_submission_source_format( $response ),
 			'registration_type'  => $this->extract_display_value( $response, 'registration_type', $form_id, $details ),
 			'name'               => '' !== $participant_name ? $participant_name : 'Bez jména',
 			'birthdate'          => $this->extract_scalar_field( $response, 'birthdate', $form_id, $details ),
@@ -690,6 +691,7 @@ class Hlavas_Terms_Participant_Service {
 			'qualification_id'   => (int) $qualification['id'],
 			'qualification'      => (string) $qualification['label'],
 			'qualification_code' => (string) $qualification['code'],
+			'source_format'      => $this->detect_submission_source_format( $response ),
 			'registration_type'  => (string) ( $context['registration_type'] ?? '' ),
 			'name'               => '' !== $participant_name ? $participant_name : 'Bez jména',
 			'birthdate'          => $this->extract_scalar_field( $response, 'birthdate', $form_id, $details ),
@@ -1331,6 +1333,22 @@ class Hlavas_Terms_Participant_Service {
 		$value = preg_replace( '/\s+/u', ' ', trim( $value ) );
 
 		return mb_strtolower( (string) $value );
+	}
+
+	/**
+	 * Detect whether one submission already carries the new HLAVAS field names.
+	 *
+	 * @param array<string, mixed> $response Response payload.
+	 * @return string new|legacy
+	 */
+	private function detect_submission_source_format( array $response ): string {
+		foreach ( [ 'typ_prihlasky', 'termin_kurz', 'termin_zkouska' ] as $field_name ) {
+			if ( array_key_exists( $field_name, $response ) ) {
+				return 'new';
+			}
+		}
+
+		return 'legacy';
 	}
 
 	/**

@@ -19,6 +19,10 @@ if ( ! class_exists( 'Hlavas_Terms_Availability_Service', false ) ) {
 	require_once __DIR__ . '/class-availability-service.php';
 }
 
+if ( ! class_exists( 'Hlavas_Terms_Participant_Service', false ) ) {
+	require_once __DIR__ . '/class-participant-service.php';
+}
+
 class Hlavas_Terms_Fluent_Sync_Service {
 
 	/**
@@ -126,6 +130,29 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			'label'       => 'Fakturační e-mail',
 			'description' => 'E-mail pro zaslání faktury.',
 		],
+	];
+
+	/**
+	 * Legacy Fluent Forms field names mapped to modern HLAVAS identifiers.
+	 *
+	 * Values are only added into existing entries, never destructively replacing
+	 * the original legacy keys.
+	 *
+	 * @var array<string, array<int, string>>
+	 */
+	private const LEGACY_FIELD_MAP = [
+		'typ_prihlasky'    => [ 'typ_prihlasky', 'input_radio' ],
+		'termin_kurz'      => [ 'termin_kurz', 'dropdown' ],
+		'termin_zkouska'   => [ 'termin_zkouska', 'dropdown_1' ],
+		'Name'             => [ 'Name', 'names' ],
+		'narozeni'         => [ 'narozeni', 'datetime' ],
+		'Address'          => [ 'Address', 'address_1' ],
+		'ucastnik_email'   => [ 'ucastnik_email', 'email' ],
+		'ucastnik_telefon' => [ 'ucastnik_telefon', 'phone' ],
+		'typ_platby'       => [ 'typ_platby', 'input_radio_1' ],
+		'nazev_organizace' => [ 'nazev_organizace', 'input_text' ],
+		'ico_organizace'   => [ 'ico_organizace', 'numeric_field' ],
+		'fakturacni_email' => [ 'fakturacni_email', 'email_1' ],
 	];
 
 	/**
@@ -416,6 +443,226 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			'created' => $created,
 			'updated' => $updated,
 			'skipped' => $skipped,
+		];
+	}
+
+	/**
+	 * Force a fresh scan of participants and capacities from Fluent Forms.
+	 *
+	 * The plugin computes these values on the fly, so rebuild means
+	 * re-reading current FF submissions and returning a summary.
+	 *
+	 * @return array{success: bool, message: string, details: array<int, string>}
+	 */
+	public function rebuild_participants_and_capacities(): array {
+		$participants_service = new Hlavas_Terms_Participant_Service( $this->repo, $this->type_repo );
+		$participants         = $participants_service->get_participants();
+		$availability_report  = $this->availability->get_availability_report();
+		$total_participants   = count( $participants );
+		$legacy_count         = 0;
+		$new_count            = 0;
+		$unmatched_count      = 0;
+		$active_terms         = 0;
+		$total_enrolled       = 0;
+
+		foreach ( $participants as $participant ) {
+			if ( 'new' === (string) ( $participant['source_format'] ?? '' ) ) {
+				$new_count++;
+			} else {
+				$legacy_count++;
+			}
+
+			if ( ! empty( $participant['is_unmatched'] ) ) {
+				$unmatched_count++;
+			}
+		}
+
+		foreach ( $availability_report as $item ) {
+			$enrolled = (int) ( $item['enrolled'] ?? 0 );
+
+			if ( $enrolled > 0 ) {
+				$active_terms++;
+				$total_enrolled += $enrolled;
+			}
+		}
+
+		return [
+			'success' => true,
+			'message' => 'Rebuild účastníků a kapacit byl dokončen.',
+			'details' => [
+				'Načteno účastníků: ' . $total_participants,
+				'Nový formát: ' . $new_count,
+				'Legacy formát: ' . $legacy_count,
+				'Nepárované historické záznamy: ' . $unmatched_count,
+				'Termíny s obsazeností: ' . $active_terms,
+				'Celkem započtených registrací do kapacit: ' . $total_enrolled,
+			],
+		];
+	}
+
+	/**
+	 * Non-destructively augment legacy Fluent Forms entries with modern HLAVAS keys.
+	 *
+	 * Original legacy field names remain untouched. The method only appends
+	 * the new field names and, where possible, converts term values to term_key.
+	 *
+	 * @param int|null $form_id Optional specific form ID.
+	 * @return array{success: bool, message: string, details: array<int, string>, scanned: int, updated: int, converted: int, skipped: int}
+	 */
+	public function migrate_legacy_entries_to_new_format( ?int $form_id = null ): array {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$submission_table = $wpdb->prefix . 'fluentform_submissions';
+
+		if ( ! $this->table_exists( $submission_table ) ) {
+			return [
+				'success'   => false,
+				'message'   => 'Tabulka Fluent Forms submissions nebyla nalezena.',
+				'details'   => [],
+				'scanned'   => 0,
+				'updated'   => 0,
+				'converted' => 0,
+				'skipped'   => 0,
+			];
+		}
+
+		$configs = $this->get_form_configurations();
+
+		if ( null !== $form_id ) {
+			$configs = array_values(
+				array_filter(
+					$configs,
+					static fn( array $config ): bool => (int) $config['form_id'] === $form_id
+				)
+			);
+		}
+
+		if ( empty( $configs ) ) {
+			return [
+				'success'   => false,
+				'message'   => 'Není nastaven žádný formulář pro migraci legacy záznamů.',
+				'details'   => [],
+				'scanned'   => 0,
+				'updated'   => 0,
+				'converted' => 0,
+				'skipped'   => 0,
+			];
+		}
+
+		$has_user_inputs_column = $this->table_has_column( $submission_table, 'user_inputs' );
+		$form_ids               = array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						static fn( array $config ): int => (int) ( $config['form_id'] ?? 0 ),
+						$configs
+					)
+				)
+			)
+		);
+		$placeholders           = implode( ',', array_fill( 0, count( $form_ids ), '%d' ) );
+		$select_columns         = $has_user_inputs_column ? 'id, form_id, response, user_inputs' : 'id, form_id, response';
+		$sql                    = $wpdb->prepare(
+			"SELECT {$select_columns}
+			FROM {$submission_table}
+			WHERE form_id IN ({$placeholders}) AND status != 'trashed'
+			ORDER BY id DESC",
+			...$form_ids
+		);
+		$rows                   = $wpdb->get_results( $sql );
+
+		if ( ! is_array( $rows ) ) {
+			return [
+				'success'   => false,
+				'message'   => 'Nepodařilo se načíst záznamy z Fluent Forms.',
+				'details'   => [],
+				'scanned'   => 0,
+				'updated'   => 0,
+				'converted' => 0,
+				'skipped'   => 0,
+			];
+		}
+
+		$scanned         = 0;
+		$updated         = 0;
+		$converted       = 0;
+		$skipped         = 0;
+		$details         = [];
+		$legacy_detected = 0;
+
+		foreach ( $rows as $row ) {
+			$scanned++;
+			$response = json_decode( (string) ( $row->response ?? '' ), true );
+
+			if ( ! is_array( $response ) ) {
+				$skipped++;
+				continue;
+			}
+
+			$user_inputs = [];
+			if ( $has_user_inputs_column ) {
+				$raw_user_inputs = json_decode( (string) ( $row->user_inputs ?? '' ), true );
+				$user_inputs     = is_array( $raw_user_inputs ) ? $raw_user_inputs : [];
+			}
+
+			$response_result    = $this->normalize_submission_container_to_modern( $response );
+			$user_inputs_result = $this->normalize_submission_container_to_modern( $user_inputs );
+
+			if ( ! empty( $response_result['legacy_detected'] ) || ! empty( $user_inputs_result['legacy_detected'] ) ) {
+				$legacy_detected++;
+			}
+
+			$converted += (int) ( $response_result['converted'] ?? 0 ) + (int) ( $user_inputs_result['converted'] ?? 0 );
+
+			if ( empty( $response_result['changed'] ) && empty( $user_inputs_result['changed'] ) ) {
+				$skipped++;
+				continue;
+			}
+
+			$update_data   = [
+				'response' => wp_json_encode( $response_result['container'], JSON_UNESCAPED_UNICODE ),
+			];
+			$update_format = [ '%s' ];
+
+			if ( $has_user_inputs_column ) {
+				$update_data['user_inputs'] = wp_json_encode( $user_inputs_result['container'], JSON_UNESCAPED_UNICODE );
+				$update_format[]            = '%s';
+			}
+
+			$update_result = $wpdb->update(
+				$submission_table,
+				$update_data,
+				[ 'id' => (int) $row->id ],
+				$update_format,
+				[ '%d' ]
+			);
+
+			if ( false === $update_result ) {
+				$details[] = 'Submission #' . (int) $row->id . ' se nepodařilo aktualizovat.';
+				continue;
+			}
+
+			$updated++;
+		}
+
+		$details[] = 'Prohledáno záznamů: ' . $scanned;
+		$details[] = 'Legacy záznamů k úpravě: ' . $legacy_detected;
+		$details[] = 'Aktualizováno záznamů: ' . $updated;
+		$details[] = 'Převedených hodnot termínů: ' . $converted;
+		$details[] = 'Přeskočeno bez změny: ' . $skipped;
+		$details[] = 'Migrace je ne-destruktivní: původní legacy pole zůstala zachována.';
+
+		return [
+			'success'   => $updated > 0 || $legacy_detected > 0,
+			'message'   => $updated > 0
+				? 'Legacy záznamy byly doplněny o nový HLAVAS formát.'
+				: 'Migrace proběhla, ale nebyly potřeba žádné změny.',
+			'details'   => $details,
+			'scanned'   => $scanned,
+			'updated'   => $updated,
+			'converted' => $converted,
+			'skipped'   => $skipped,
 		];
 	}
 
@@ -1248,6 +1495,169 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			'listopadu' => 11,
 			'prosince'  => 12,
 		];
+	}
+
+	/**
+	 * Add modern HLAVAS field names into one stored FF submission container.
+	 *
+	 * Original legacy fields remain untouched. The method only fills in
+	 * modern aliases and normalizes term values to term_key where possible.
+	 *
+	 * @param array<string, mixed> $container Response or user_inputs container.
+	 * @return array{container: array<string, mixed>, changed: bool, legacy_detected: bool, converted: int}
+	 */
+	private function normalize_submission_container_to_modern( array $container ): array {
+		$changed         = false;
+		$legacy_detected = false;
+		$converted       = 0;
+
+		foreach ( self::LEGACY_FIELD_MAP as $modern_key => $candidate_keys ) {
+			$existing_value = $container[ $modern_key ] ?? null;
+			$legacy_value   = null;
+
+			foreach ( $candidate_keys as $candidate_key ) {
+				if ( ! array_key_exists( $candidate_key, $container ) ) {
+					continue;
+				}
+
+				if ( $candidate_key !== $modern_key ) {
+					$legacy_detected = true;
+				}
+
+				if ( null === $legacy_value || '' === trim( $this->stringify_mixed_value( $legacy_value ) ) ) {
+					$legacy_value = $container[ $candidate_key ];
+				}
+			}
+
+			$value_to_store = $existing_value;
+
+			if ( null === $value_to_store || '' === trim( $this->stringify_mixed_value( $value_to_store ) ) ) {
+				$value_to_store = $legacy_value;
+			}
+
+			if ( 'termin_kurz' === $modern_key || 'termin_zkouska' === $modern_key ) {
+				$term_type            = 'termin_kurz' === $modern_key ? 'kurz' : 'zkouska';
+				$original_term_string = trim( $this->stringify_mixed_value( $value_to_store ) );
+				$converted_term_value = $this->convert_legacy_term_value_to_new_key( $original_term_string, $term_type );
+
+				if ( '' !== $converted_term_value && $converted_term_value !== $original_term_string ) {
+					$converted++;
+				}
+
+				$value_to_store = $converted_term_value;
+			}
+
+			$current_serialized = $this->stringify_mixed_value( $container[ $modern_key ] ?? null );
+			$next_serialized    = $this->stringify_mixed_value( $value_to_store );
+
+			if ( $next_serialized !== $current_serialized ) {
+				$container[ $modern_key ] = $value_to_store ?? '';
+				$changed                  = true;
+			}
+		}
+
+		return [
+			'container'       => $container,
+			'changed'         => $changed,
+			'legacy_detected' => $legacy_detected,
+			'converted'       => $converted,
+		];
+	}
+
+	/**
+	 * Convert a human-readable legacy term label into the internal term_key.
+	 *
+	 * @param string $value Original submission value.
+	 * @param string $term_type kurz|zkouska
+	 * @return string
+	 */
+	private function convert_legacy_term_value_to_new_key( string $value, string $term_type ): string {
+		$value = trim( $value );
+
+		if ( '' === $value ) {
+			return '';
+		}
+
+		if ( preg_match( '/^(kurz|zkouska)_\d{4}_\d{2}_\d{2}(?:_\d{2})?$/', $value ) ) {
+			return $value;
+		}
+
+		$dates = $this->parse_import_term_dates( $term_type, $value, $value );
+
+		if ( null === $dates ) {
+			return $value;
+		}
+
+		return $this->determine_import_term_key( $term_type, $value, $dates['date_start'], $dates['date_end'] );
+	}
+
+	/**
+	 * Convert mixed data to a compact comparable string.
+	 *
+	 * @param mixed $value Value.
+	 * @return string
+	 */
+	private function stringify_mixed_value( mixed $value ): string {
+		if ( is_string( $value ) || is_numeric( $value ) ) {
+			return trim( (string) $value );
+		}
+
+		if ( is_array( $value ) ) {
+			$parts = [];
+
+			foreach ( $value as $item ) {
+				$item_string = $this->stringify_mixed_value( $item );
+
+				if ( '' !== $item_string ) {
+					$parts[] = $item_string;
+				}
+			}
+
+			return implode( ' | ', $parts );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Check if DB table contains a specific column.
+	 *
+	 * @param string $table_name Full table name.
+	 * @param string $column_name Column name.
+	 * @return bool
+	 */
+	private function table_has_column( string $table_name, string $column_name ): bool {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$column = $wpdb->get_var(
+			$wpdb->prepare(
+				"SHOW COLUMNS FROM {$table_name} LIKE %s",
+				$column_name
+			)
+		);
+
+		return ! empty( $column );
+	}
+
+	/**
+	 * Check whether a DB table exists.
+	 *
+	 * @param string $table_name Full table name.
+	 * @return bool
+	 */
+	private function table_exists( string $table_name ): bool {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$result = $wpdb->get_var(
+			$wpdb->prepare(
+				'SHOW TABLES LIKE %s',
+				$table_name
+			)
+		);
+
+		return $table_name === $result;
 	}
 
 	/**

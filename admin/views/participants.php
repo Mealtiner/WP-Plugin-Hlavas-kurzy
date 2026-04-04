@@ -232,7 +232,20 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 						<td class="column-participant">
 							<details class="hlavas-participant-details">
 								<summary>
-									<span class="hlavas-participant-name"><?php echo esc_html( (string) $participant['name'] ); ?></span>
+									<span class="hlavas-participant-name">
+										<?php echo esc_html( (string) $participant['name'] ); ?>
+										<?php
+										$source_format = (string) ( $participant['source_format'] ?? 'legacy' );
+										$is_new_format = 'new' === $source_format;
+										?>
+										<span
+											class="hlavas-participant-format hlavas-participant-format-<?php echo esc_attr( $source_format ); ?>"
+											title="<?php echo esc_attr( $is_new_format ? 'Záznam je už v novém HLAVAS formátu.' : 'Záznam je ve starším legacy formátu.' ); ?>"
+											aria-label="<?php echo esc_attr( $is_new_format ? 'Nový formát' : 'Legacy formát' ); ?>"
+										>
+											<span class="dashicons <?php echo esc_attr( $is_new_format ? 'dashicons-yes-alt' : 'dashicons-backup' ); ?>" aria-hidden="true"></span>
+										</span>
+									</span>
 									<span class="hlavas-subline"><?php echo esc_html( ! empty( $participant['email'] ) ? (string) $participant['email'] : 'Bez e-mailu' ); ?></span>
 								</summary>
 								<div class="hlavas-participant-card">

@@ -363,6 +363,20 @@ class Hlavas_Terms_Admin {
 		}
 
 		if (
+			isset( $_POST['hlavas_sync_rebuild'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_sync_nonce'] ?? '' ) ), 'hlavas_sync' )
+		) {
+			$this->handle_sync_rebuild();
+		}
+
+		if (
+			isset( $_POST['hlavas_sync_migrate_legacy'] ) &&
+			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_sync_nonce'] ?? '' ) ), 'hlavas_sync' )
+		) {
+			$this->handle_sync_legacy_migration();
+		}
+
+		if (
 			isset( $_POST['hlavas_terms_save_settings'] ) &&
 			wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_hlavas_settings_nonce'] ?? '' ) ), 'hlavas_terms_settings' )
 		) {
@@ -1511,6 +1525,58 @@ class Hlavas_Terms_Admin {
 		wp_safe_redirect(
 			admin_url( 'admin.php?page=hlavas-terms-settings&message=' . ( ! empty( $result['success'] ) ? 'exported_to_ff' : 'export_to_ff_failed' ) )
 		);
+		exit;
+	}
+
+	/**
+	 * Rebuild participant and capacity views from current Fluent Forms entries.
+	 *
+	 * @return void
+	 */
+	private function handle_sync_rebuild(): void {
+		$result = $this->sync->rebuild_participants_and_capacities();
+
+		hlavas_terms_log_event(
+			'participants_capacity_rebuilt',
+			! empty( $result['success'] ) ? 'Rebuild ucastniku a kapacit byl dokoncen.' : 'Rebuild ucastniku a kapacit selhal.',
+			[
+				'success' => ! empty( $result['success'] ) ? 1 : 0,
+				'details' => is_array( $result['details'] ?? null ) ? array_values( $result['details'] ) : [],
+			],
+			! empty( $result['success'] ) ? 'info' : 'error'
+		);
+
+		set_transient( 'hlavas_sync_result', $result, 60 );
+
+		wp_safe_redirect( admin_url( 'admin.php?page=hlavas-terms-sync' ) );
+		exit;
+	}
+
+	/**
+	 * Migrate legacy FF entry payloads to modern HLAVAS field aliases.
+	 *
+	 * @return void
+	 */
+	private function handle_sync_legacy_migration(): void {
+		$result = $this->sync->migrate_legacy_entries_to_new_format();
+
+		hlavas_terms_log_event(
+			'legacy_entries_migrated',
+			! empty( $result['success'] ) ? 'Legacy FF zaznamy byly zpracovany do noveho formatu.' : 'Migrace legacy FF zaznamu selhala.',
+			[
+				'success'   => ! empty( $result['success'] ) ? 1 : 0,
+				'scanned'   => (int) ( $result['scanned'] ?? 0 ),
+				'updated'   => (int) ( $result['updated'] ?? 0 ),
+				'converted' => (int) ( $result['converted'] ?? 0 ),
+				'skipped'   => (int) ( $result['skipped'] ?? 0 ),
+				'details'   => is_array( $result['details'] ?? null ) ? array_values( $result['details'] ) : [],
+			],
+			! empty( $result['success'] ) ? 'warning' : 'error'
+		);
+
+		set_transient( 'hlavas_sync_result', $result, 60 );
+
+		wp_safe_redirect( admin_url( 'admin.php?page=hlavas-terms-sync' ) );
 		exit;
 	}
 

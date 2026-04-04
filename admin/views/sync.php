@@ -58,6 +58,50 @@ if ( ! defined( 'ABSPATH' ) ) {
 		</p>
 	</div>
 
+	<div class="hlavas-sync-tools">
+		<div class="hlavas-sync-tool-card">
+			<h2>Rebuild účastníků a kapacit</h2>
+			<p>
+				Projde znovu všechny dostupné entries z napojených Fluent Forms formulářů a přepočítá,
+				co se má zobrazit na stránkách <strong>Účastníci</strong> a <strong>Obsazenost a kapacita</strong>.
+				Nemaže data, jen udělá nový průchod a kontrolu párování.
+			</p>
+			<form method="post" class="hlavas-sync-inline-form">
+				<?php wp_nonce_field( 'hlavas_sync', '_hlavas_sync_nonce' ); ?>
+				<button
+					type="submit"
+					name="hlavas_sync_rebuild"
+					value="1"
+					class="button"
+					onclick="return confirm('Spustit rebuild účastníků a kapacit z Fluent Forms entries?');"
+				>
+					Rebuild účastníků a kapacit
+				</button>
+			</form>
+		</div>
+
+		<div class="hlavas-sync-tool-card">
+			<h2>Opravit legacy entries na nový formát</h2>
+			<p>
+				Doplní do starších entries nové HLAVAS klíče jako <code>typ_prihlasky</code>, <code>termin_kurz</code>
+				a <code>termin_zkouska</code>. Původní legacy pole zůstávají zachována, takže se data nemažou
+				a migrace je ne-destruktivní.
+			</p>
+			<form method="post" class="hlavas-sync-inline-form">
+				<?php wp_nonce_field( 'hlavas_sync', '_hlavas_sync_nonce' ); ?>
+				<button
+					type="submit"
+					name="hlavas_sync_migrate_legacy"
+					value="1"
+					class="button button-secondary"
+					onclick="return confirm('Opravdu doplnit staré legacy entries o nový HLAVAS formát? Původní data zůstanou zachována.');"
+				>
+					Opravit legacy na nový formát
+				</button>
+			</form>
+		</div>
+	</div>
+
 	<?php if ( empty( $form_sections ) ) : ?>
 		<div class="notice notice-warning">
 			<p>Neni nastaven zadny formular. Nejdriv dopln Form ID v typech kurzu nebo ve vychozim nastaveni pluginu.</p>
