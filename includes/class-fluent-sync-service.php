@@ -616,6 +616,13 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			$converted += (int) ( $response_result['converted'] ?? 0 ) + (int) ( $user_inputs_result['converted'] ?? 0 );
 
 			if ( empty( $response_result['changed'] ) && empty( $user_inputs_result['changed'] ) ) {
+				$this->sync_submission_term_details(
+					(int) $row->id,
+					(int) $row->form_id,
+					$response_result['container'],
+					$user_inputs_result['container']
+				);
+
 				$skipped++;
 				continue;
 			}
@@ -642,6 +649,13 @@ class Hlavas_Terms_Fluent_Sync_Service {
 				$details[] = 'Submission #' . (int) $row->id . ' se nepodařilo aktualizovat.';
 				continue;
 			}
+
+			$this->sync_submission_term_details(
+				(int) $row->id,
+				(int) $row->form_id,
+				$response_result['container'],
+				$user_inputs_result['container']
+			);
 
 			$updated++;
 		}
@@ -672,6 +686,95 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 * @param int $term_id Term ID.
 	 * @return array<int, int>
 	 */
+	/**
+	 * Rewrite one Fluent Forms submission term value to match a selected plugin term.
+	 *
+	 * @param int $submission_id Fluent Forms submission ID.
+	 * @param int $term_id Plugin term ID.
+	 * @return array{success: bool, message: string}
+	 */
+	public function sync_submission_term_selection( int $submission_id, int $term_id ): array {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$submission_table = $wpdb->prefix . 'fluentform_submissions';
+		$term             = $this->repo->find( $term_id );
+
+		if ( $submission_id <= 0 || ! $term ) {
+			return [
+				'success' => false,
+				'message' => 'Submission nebo termín nebyl nalezen.',
+			];
+		}
+
+		if ( ! $this->table_exists( $submission_table ) ) {
+			return [
+				'success' => false,
+				'message' => 'Tabulka Fluent Forms submissions nebyla nalezena.',
+			];
+		}
+
+		$has_user_inputs_column = $this->table_has_column( $submission_table, 'user_inputs' );
+		$select_columns         = $has_user_inputs_column ? 'id, form_id, response, user_inputs' : 'id, form_id, response';
+		$row                    = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT {$select_columns} FROM {$submission_table} WHERE id = %d",
+				$submission_id
+			)
+		);
+
+		if ( ! $row ) {
+			return [
+				'success' => false,
+				'message' => 'Submission nebyl nalezen.',
+			];
+		}
+
+		$response = json_decode( (string) ( $row->response ?? '' ), true );
+		$response = is_array( $response ) ? $response : [];
+
+		$user_inputs = [];
+		if ( $has_user_inputs_column ) {
+			$decoded_user_inputs = json_decode( (string) ( $row->user_inputs ?? '' ), true );
+			$user_inputs         = is_array( $decoded_user_inputs ) ? $decoded_user_inputs : [];
+		}
+
+		$response    = $this->apply_term_to_submission_container( $response, $term );
+		$user_inputs = $this->apply_term_to_submission_container( $user_inputs, $term );
+
+		$update_data   = [
+			'response' => wp_json_encode( $response, JSON_UNESCAPED_UNICODE ),
+		];
+		$update_format = [ '%s' ];
+
+		if ( $has_user_inputs_column ) {
+			$update_data['user_inputs'] = wp_json_encode( $user_inputs, JSON_UNESCAPED_UNICODE );
+			$update_format[]            = '%s';
+		}
+
+		$updated = $wpdb->update(
+			$submission_table,
+			$update_data,
+			[ 'id' => $submission_id ],
+			$update_format,
+			[ '%d' ]
+		);
+
+		if ( false === $updated ) {
+			return [
+				'success' => false,
+				'message' => 'Nepodařilo se uložit změnu do Fluent Forms submissions.',
+			];
+		}
+
+		$this->sync_submission_term_details( $submission_id, (int) $row->form_id, $response, $user_inputs );
+
+		return [
+			'success' => true,
+			'message' => 'Submission byl upraven podle nového termínu.',
+		];
+	}
+
 	public function get_form_ids_for_term( int $term_id ): array {
 		$term = $this->repo->find( $term_id );
 
@@ -1113,15 +1216,12 @@ class Hlavas_Terms_Fluent_Sync_Service {
 				// Use remaining spots (capacity − already enrolled) so that
 				// synchronization never resets a partially-filled inventory back
 				// to the full capacity in Fluent Forms.
-				$enrolled  = $this->availability->count_enrollments( (string) $term->term_key );
-				$remaining = max( 0, $capacity - $enrolled );
-
 				$options[] = [
 					'label'      => (string) $term->label,
 					'value'      => $value,
-					'calc_value' => (string) $remaining,
+					'calc_value' => (string) $capacity,
 					'image'      => '',
-					'quantity'   => $remaining,
+					'quantity'   => $capacity,
 				];
 
 				$synced_term_ids[] = (int) $term->id;
@@ -1597,6 +1697,116 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 * @param mixed $value Value.
 	 * @return string
 	 */
+	/**
+	 * Apply one selected term into stored FF submission containers.
+	 *
+	 * @param array<string, mixed> $container Response or user_inputs payload.
+	 * @param object               $term Plugin term object.
+	 * @return array<string, mixed>
+	 */
+	private function apply_term_to_submission_container( array $container, object $term ): array {
+		$term_type   = 'zkouska' === (string) ( $term->term_type ?? '' ) ? 'termin_zkouska' : 'termin_kurz';
+		$field_names = self::LEGACY_FIELD_MAP[ $term_type ] ?? [ $term_type ];
+		$term_value  = 'label' === hlavas_terms_get_sync_value_mode()
+			? (string) ( $term->label ?? '' )
+			: (string) ( $term->term_key ?? '' );
+
+		if ( '' === $term_value ) {
+			return $container;
+		}
+
+		foreach ( $field_names as $field_name ) {
+			$container[ $field_name ] = $term_value;
+		}
+
+		$container[ $term_type ] = $term_value;
+
+		return $container;
+	}
+
+	/**
+	 * Synchronize entry_details rows used by FF inventory counting.
+	 *
+	 * @param int                  $submission_id Submission ID.
+	 * @param int                  $form_id Form ID.
+	 * @param array<string, mixed> $response Response payload.
+	 * @param array<string, mixed> $user_inputs User inputs payload.
+	 * @return void
+	 */
+	private function sync_submission_term_details( int $submission_id, int $form_id, array $response, array $user_inputs = [] ): void {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$details_table = $wpdb->prefix . 'fluentform_entry_details';
+
+		if ( $submission_id <= 0 || $form_id <= 0 || ! $this->table_exists( $details_table ) ) {
+			return;
+		}
+
+		foreach ( [ 'termin_kurz' => 'kurz', 'termin_zkouska' => 'zkouska' ] as $modern_field => $term_type ) {
+			$term_value = trim(
+				(string) (
+					$response[ $modern_field ]
+					?? $user_inputs[ $modern_field ]
+					?? ''
+				)
+			);
+
+			if ( '' === $term_value ) {
+				continue;
+			}
+
+			$aliases = self::LEGACY_FIELD_MAP[ $modern_field ] ?? [ $modern_field ];
+
+			foreach ( $aliases as $field_name ) {
+				$existing_id = (int) $wpdb->get_var(
+					$wpdb->prepare(
+						"SELECT id FROM {$details_table} WHERE submission_id = %d AND form_id = %d AND field_name = %s ORDER BY id ASC LIMIT 1",
+						$submission_id,
+						$form_id,
+						$field_name
+					)
+				);
+
+				if ( $existing_id > 0 ) {
+					$wpdb->update(
+						$details_table,
+						[
+							'field_value' => $term_value,
+						],
+						[
+							'id' => $existing_id,
+						],
+						[
+							'%s',
+						],
+						[
+							'%d',
+						]
+					);
+
+					continue;
+				}
+
+				$wpdb->insert(
+					$details_table,
+					[
+						'form_id'       => $form_id,
+						'submission_id' => $submission_id,
+						'field_name'    => $field_name,
+						'field_value'   => $term_value,
+					],
+					[
+						'%d',
+						'%d',
+						'%s',
+						'%s',
+					]
+				);
+			}
+		}
+	}
+
 	private function stringify_mixed_value( mixed $value ): string {
 		if ( is_string( $value ) || is_numeric( $value ) ) {
 			return trim( (string) $value );

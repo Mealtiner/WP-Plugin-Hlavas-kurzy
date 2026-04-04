@@ -99,6 +99,7 @@ $t = $term ?? $defaults;
 								value="<?php echo esc_attr( (string) $qualification_type->id ); ?>"
 								data-has-kurz="<?php echo esc_attr( (string) (int) $qualification_type->has_courses ); ?>"
 								data-has-zkouska="<?php echo esc_attr( (string) (int) $qualification_type->has_exams ); ?>"
+								data-accreditation-code="<?php echo esc_attr( (string) ( $qualification_type->accreditation_number ?? '' ) ); ?>"
 								<?php selected( (int) $t->qualification_type_id, (int) $qualification_type->id ); ?>
 							>
 								<?php
@@ -140,7 +141,7 @@ $t = $term ?? $defaults;
 						value="<?php echo esc_attr( (string) $t->term_key ); ?>"
 						placeholder="např. kurz_2026_04_17_19"
 					>
-					<button type="button" id="btn_generate_key" class="button button-small">Vygenerovat z datumů</button>
+					<button type="button" id="btn_generate_key" class="button button-small">Vygenerovat z dat</button>
 					<p class="description">Stabilní identifikátor. Po vytvoření záznamů neměňte.</p>
 				</td>
 			</tr>
@@ -155,8 +156,8 @@ $t = $term ?? $defaults;
 						value="<?php echo esc_attr( (string) $t->label ); ?>"
 						placeholder="např. kurz: 17. - 19. dubna 2026"
 					>
-					<button type="button" id="btn_generate_label" class="button button-small">Vygenerovat z datumů</button>
-					<p class="description">Tento text se zobrazí v dropdownu formuláře.</p>
+					<button type="button" id="btn_generate_label" class="button button-small">Vygenerovat z dat</button>
+					<p class="description">Tento text se zobrazí v dropdownu formuláře. U zkoušek se generuje jako: Zkouška z profesní kvalifikace KÓD (datum).</p>
 				</td>
 			</tr>
 			<tr>
@@ -206,7 +207,7 @@ $t = $term ?? $defaults;
 				value="1"
 				class="button <?php echo $is_edit ? 'button-secondary' : ''; ?>"
 				<?php echo $is_edit ? '' : 'disabled'; ?>
-				onclick="return confirm('Opravdu synchronizovat navazany Fluent Forms formular? Dojde k prepisu voleb terminu a kapacit ve formulari.');"
+				onclick="return confirm('Opravdu synchronizovat navázaný Fluent Forms formulář? Dojde k přepisu voleb termínů a kapacit ve formuláři.');"
 			>
 				Synchronizace do FF
 			</button>
@@ -242,8 +243,55 @@ document.addEventListener('DOMContentLoaded', function() {
 		return {
 			type: document.getElementById('term_type').value,
 			start: document.getElementById('date_start').value,
-			end: document.getElementById('date_end').value,
+			end: document.getElementById('date_end').value
 		};
+	}
+
+	function getSelectedQualificationCode() {
+		const select = document.getElementById('qualification_type_id');
+		const option = select.options[select.selectedIndex];
+		return option ? (option.dataset.accreditationCode || '').trim() : '';
+	}
+
+	function formatSingleDate(date) {
+		const day = date.getDate();
+		const month = date.getMonth() + 1;
+		const year = date.getFullYear();
+		return day + '. ' + months[month] + ' ' + year;
+	}
+
+	function buildGeneratedLabel() {
+		const v = getValues();
+		if (!v.start) {
+			return '';
+		}
+
+		const startDate = new Date(v.start);
+
+		if (v.type === 'zkouska') {
+			const qualificationCode = getSelectedQualificationCode();
+			const formattedDate = formatSingleDate(startDate);
+			return qualificationCode
+				? 'Zkouška z profesní kvalifikace ' + qualificationCode + ' (' + formattedDate + ')'
+				: 'zkouška: ' + formattedDate;
+		}
+
+		const dayS = startDate.getDate();
+		const monthS = startDate.getMonth() + 1;
+		const yearS = startDate.getFullYear();
+
+		if (v.end && v.end !== v.start) {
+			const endDate = new Date(v.end);
+			const dayE = endDate.getDate();
+			const monthE = endDate.getMonth() + 1;
+			if (monthS === monthE && yearS === endDate.getFullYear()) {
+				return 'kurz: ' + dayS + '. - ' + dayE + '. ' + months[monthE] + ' ' + yearS;
+			}
+
+			return 'kurz: ' + dayS + '. ' + months[monthS] + ' - ' + dayE + '. ' + months[monthE] + ' ' + yearS;
+		}
+
+		return 'kurz: ' + dayS + '. ' + months[monthS] + ' ' + yearS;
 	}
 
 	function syncQualificationOptions() {
@@ -271,52 +319,54 @@ document.addEventListener('DOMContentLoaded', function() {
 		});
 	}
 
+	function syncLabelPlaceholder() {
+		const labelInput = document.getElementById('label');
+		labelInput.placeholder = document.getElementById('term_type').value === 'zkouska'
+			? 'např. Zkouška z profesní kvalifikace 75-008-N (22. dubna 2026)'
+			: 'např. kurz: 17. - 19. dubna 2026';
+	}
+
+	function autoFillGeneratedLabelIfEmpty() {
+		const labelInput = document.getElementById('label');
+		if (labelInput.value.trim() === '') {
+			labelInput.value = buildGeneratedLabel();
+		}
+	}
+
 	document.getElementById('btn_generate_key').addEventListener('click', function() {
 		const v = getValues();
 		if (!v.start) {
 			alert('Vyplňte datum od.');
 			return;
 		}
-		const s = new Date(v.start);
 		const prefix = v.type === 'kurz' ? 'kurz' : 'zkouska';
 		let key = prefix + '_' + v.start.replace(/-/g, '_');
 		if (v.type === 'kurz' && v.end && v.end !== v.start) {
-			const e = new Date(v.end);
-			key += '_' + String(e.getDate()).padStart(2, '0');
+			const endDate = new Date(v.end);
+			key += '_' + String(endDate.getDate()).padStart(2, '0');
 		}
 		document.getElementById('term_key').value = key;
 	});
 
 	document.getElementById('btn_generate_label').addEventListener('click', function() {
-		const v = getValues();
-		if (!v.start) {
+		if (!getValues().start) {
 			alert('Vyplňte datum od.');
 			return;
 		}
-		const s = new Date(v.start);
-		const prefix = v.type === 'kurz' ? 'kurz' : 'zkouška';
-		const dayS = s.getDate();
-		const monthS = s.getMonth() + 1;
-		const yearS = s.getFullYear();
 
-		if (v.type === 'kurz' && v.end && v.end !== v.start) {
-			const e = new Date(v.end);
-			const dayE = e.getDate();
-			const monthE = e.getMonth() + 1;
-			if (monthS === monthE && yearS === e.getFullYear()) {
-				document.getElementById('label').value =
-					prefix + ': ' + dayS + '. - ' + dayE + '. ' + months[monthE] + ' ' + yearS;
-			} else {
-				document.getElementById('label').value =
-					prefix + ': ' + dayS + '. ' + months[monthS] + ' - ' + dayE + '. ' + months[monthE] + ' ' + yearS;
-			}
-		} else {
-			document.getElementById('label').value =
-				prefix + ': ' + dayS + '. ' + months[monthS] + ' ' + yearS;
-		}
+		document.getElementById('label').value = buildGeneratedLabel();
 	});
 
-	document.getElementById('term_type').addEventListener('change', syncQualificationOptions);
+	document.getElementById('term_type').addEventListener('change', function() {
+		syncQualificationOptions();
+		syncLabelPlaceholder();
+		autoFillGeneratedLabelIfEmpty();
+	});
+	document.getElementById('qualification_type_id').addEventListener('change', autoFillGeneratedLabelIfEmpty);
+	document.getElementById('date_start').addEventListener('change', autoFillGeneratedLabelIfEmpty);
+	document.getElementById('date_end').addEventListener('change', autoFillGeneratedLabelIfEmpty);
+
 	syncQualificationOptions();
+	syncLabelPlaceholder();
 });
 </script>

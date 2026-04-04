@@ -3,7 +3,7 @@
  * Plugin Name: HLAVAS – Správa termínů kurzů a zkoušek
  * Plugin URI:  https://hlavas.cz
  * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms pro projekt HLAVAS.cz realizovaný Jihomoravskou radou dětí a mládeže (JRDM).
- * Version:     1.2.7
+ * Version:     1.3.1
  * Author:      Michal "Mealtiner" Truhlář
  * Author URI:  https://mealtiner.cz
  * Text Domain: hlavas-terms
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Plugin constants.
  */
-define( 'HLAVAS_TERMS_VERSION', '1.2.7' );
+define( 'HLAVAS_TERMS_VERSION', '1.3.1' );
 define( 'HLAVAS_TERMS_FILE', __FILE__ );
 define( 'HLAVAS_TERMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HLAVAS_TERMS_URL', plugin_dir_url( __FILE__ ) );

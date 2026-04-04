@@ -192,6 +192,15 @@ class Hlavas_Terms_Admin {
 			'hlavas-terms-info',
 			[ $this, 'page_info' ]
 		);
+
+		add_submenu_page(
+			'hlavas-terms',
+			'Servis / Diagnostika',
+			'Servis / Diagnostika',
+			'manage_options',
+			'hlavas-terms-diagnostics',
+			[ $this, 'page_diagnostics' ]
+		);
 	}
 
 	/* ---------------------------------------------------------------
@@ -525,7 +534,8 @@ class Hlavas_Terms_Admin {
 			$data['label'] = Hlavas_Terms_Label_Builder::build(
 				$data['term_type'],
 				$data['date_start'],
-				$data['date_end']
+				$data['date_end'],
+				$this->get_term_qualification_code( $data['qualification_type_id'] )
 			);
 		}
 
@@ -1260,7 +1270,8 @@ class Hlavas_Terms_Admin {
 						$new_label = Hlavas_Terms_Label_Builder::build(
 							$term->term_type,
 							$term->date_start,
-							$term->date_end
+							$term->date_end,
+							$this->get_term_qualification_code( (int) ( $term->qualification_type_id ?? 0 ) )
 						);
 
 						$this->repo->update(
@@ -1415,9 +1426,9 @@ class Hlavas_Terms_Admin {
 				[],
 				'error'
 			);
-			wp_safe_redirect(
-				admin_url( 'admin.php?page=hlavas-terms-settings&message=import_missing_file' )
-			);
+		wp_safe_redirect(
+			admin_url( 'admin.php?page=hlavas-terms-diagnostics&message=import_missing_file' )
+		);
 			exit;
 		}
 
@@ -1432,9 +1443,9 @@ class Hlavas_Terms_Admin {
 				[],
 				'error'
 			);
-			wp_safe_redirect(
-				admin_url( 'admin.php?page=hlavas-terms-settings&message=import_invalid_file' )
-			);
+		wp_safe_redirect(
+			admin_url( 'admin.php?page=hlavas-terms-diagnostics&message=import_invalid_file' )
+		);
 			exit;
 		}
 
@@ -1450,7 +1461,7 @@ class Hlavas_Terms_Admin {
 		);
 
 		wp_safe_redirect(
-			admin_url( 'admin.php?page=hlavas-terms-settings&message=' . rawurlencode( $result_message ) )
+			admin_url( 'admin.php?page=hlavas-terms-diagnostics&message=' . rawurlencode( $result_message ) )
 		);
 		exit;
 	}
@@ -1471,7 +1482,7 @@ class Hlavas_Terms_Admin {
 		);
 
 		wp_safe_redirect(
-			admin_url( 'admin.php?page=hlavas-terms-settings&message=sync_log_reset' )
+			admin_url( 'admin.php?page=hlavas-terms-diagnostics&message=sync_log_reset' )
 		);
 		exit;
 	}
@@ -1500,7 +1511,7 @@ class Hlavas_Terms_Admin {
 
 		wp_safe_redirect(
 			admin_url(
-				'admin.php?page=hlavas-terms-settings&message=' . ( ! empty( $result['success'] ) ? 'imported_from_ff' : 'import_from_ff_failed' ) .
+				'admin.php?page=hlavas-terms-sync&message=' . ( ! empty( $result['success'] ) ? 'imported_from_ff' : 'import_from_ff_failed' ) .
 				'&created=' . (int) ( $result['created'] ?? 0 ) .
 				'&updated=' . (int) ( $result['updated'] ?? 0 ) .
 				'&skipped=' . (int) ( $result['skipped'] ?? 0 )
@@ -1530,7 +1541,7 @@ class Hlavas_Terms_Admin {
 		);
 
 		wp_safe_redirect(
-			admin_url( 'admin.php?page=hlavas-terms-settings&message=' . ( ! empty( $result['success'] ) ? 'exported_to_ff' : 'export_to_ff_failed' ) )
+			admin_url( 'admin.php?page=hlavas-terms-sync&message=' . ( ! empty( $result['success'] ) ? 'exported_to_ff' : 'export_to_ff_failed' ) )
 		);
 		exit;
 	}
@@ -1567,6 +1578,10 @@ class Hlavas_Terms_Admin {
 	private function handle_sync_legacy_migration(): void {
 		$result = $this->sync->migrate_legacy_entries_to_new_format();
 
+		if ( ! empty( $result['success'] ) ) {
+			$this->sync->execute( hlavas_terms_get_sync_value_mode() );
+		}
+
 		hlavas_terms_log_event(
 			'legacy_entries_migrated',
 			! empty( $result['success'] ) ? 'Legacy FF zaznamy byly zpracovany do noveho formatu.' : 'Migrace legacy FF zaznamu selhala.',
@@ -1596,6 +1611,7 @@ class Hlavas_Terms_Admin {
 		$submission_id = absint( $_POST['submission_id'] ?? 0 );
 		$term_id       = absint( $_POST['manual_term_id'] ?? 0 );
 		$term          = $term_id > 0 ? $this->repo->find( $term_id ) : null;
+		$had_override  = $submission_id > 0 && hlavas_terms_get_manual_participant_term_id( $submission_id ) > 0;
 		$message       = 'participant_term_pairing_saved';
 
 		if ( $submission_id <= 0 ) {
@@ -1604,6 +1620,15 @@ class Hlavas_Terms_Admin {
 			$message = 'participant_term_pairing_failed';
 		} elseif ( $term_id > 0 ) {
 			hlavas_terms_set_manual_participant_term_id( $submission_id, $term_id );
+			$ff_sync_result = $this->sync->sync_submission_term_selection( $submission_id, $term_id );
+
+			if ( empty( $ff_sync_result['success'] ) ) {
+				$message = 'participant_term_pairing_failed';
+			} else {
+				foreach ( $this->sync->get_form_ids_for_term( $term_id ) as $form_id ) {
+					$this->sync->execute( hlavas_terms_get_sync_value_mode(), $form_id );
+				}
+			}
 			hlavas_terms_log_event(
 				'participant_term_paired',
 				'Účastník byl ručně spárován s termínem.',
@@ -1612,9 +1637,11 @@ class Hlavas_Terms_Admin {
 					'term_id'       => $term_id,
 					'term_key'      => (string) ( $term->term_key ?? '' ),
 					'term_title'    => (string) ( $term->title ?? $term->label ?? '' ),
+					'ff_sync'       => ! empty( $ff_sync_result['success'] ) ? 1 : 0,
+					'ff_message'    => (string) ( $ff_sync_result['message'] ?? '' ),
 				]
 			);
-		} else {
+		} elseif ( $had_override ) {
 			hlavas_terms_clear_manual_participant_term_id( $submission_id );
 			$message = 'participant_term_pairing_cleared';
 			hlavas_terms_log_event(
@@ -1624,6 +1651,14 @@ class Hlavas_Terms_Admin {
 					'submission_id' => $submission_id,
 				],
 				'warning'
+			);
+		} else {
+			hlavas_terms_log_event(
+				'participant_term_pairing_unchanged',
+				'Termin ucastnika zustal bez rucni zmeny.',
+				[
+					'submission_id' => $submission_id,
+				]
 			);
 		}
 
@@ -1676,7 +1711,7 @@ class Hlavas_Terms_Admin {
 
 		if ( ! file_exists( $log_file ) || ! is_readable( $log_file ) ) {
 			wp_safe_redirect(
-				admin_url( 'admin.php?page=hlavas-terms-settings&message=log_missing' )
+				admin_url( 'admin.php?page=hlavas-terms-diagnostics&message=log_missing' )
 			);
 			exit;
 		}
@@ -1704,7 +1739,7 @@ class Hlavas_Terms_Admin {
 	private function handle_log_clear(): void {
 		if ( ! hlavas_terms_clear_log_file() ) {
 			wp_safe_redirect(
-				admin_url( 'admin.php?page=hlavas-terms-settings&message=log_clear_failed' )
+				admin_url( 'admin.php?page=hlavas-terms-diagnostics&message=log_clear_failed' )
 			);
 			exit;
 		}
@@ -1717,7 +1752,7 @@ class Hlavas_Terms_Admin {
 		);
 
 		wp_safe_redirect(
-			admin_url( 'admin.php?page=hlavas-terms-settings&message=log_cleared' )
+			admin_url( 'admin.php?page=hlavas-terms-diagnostics&message=log_cleared' )
 		);
 		exit;
 	}
@@ -1778,6 +1813,12 @@ class Hlavas_Terms_Admin {
 		}
 
 		$terms   = $this->repo->get_all( $filters );
+		$enrolled_counts = [];
+
+		foreach ( $terms as $term ) {
+			$enrolled_counts[ (int) $term->id ] = $this->availability->count_enrollments( (string) $term->term_key );
+		}
+
 		$sync_log       = hlavas_terms_get_sync_log();
 		$message        = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
 		$report_message = sanitize_text_field( wp_unslash( $_GET['report_message'] ?? '' ) );
@@ -1812,10 +1853,9 @@ class Hlavas_Terms_Admin {
 	 * @return void
 	 */
 	public function page_sync(): void {
+		$message          = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
 		$selected_form_id = absint( $_GET['form_id'] ?? 0 );
-		$show_debug       = hlavas_terms_is_debug_enabled() || isset( $_GET['debug'] );
 		$form_sections    = $this->sync->get_form_sections();
-		$debug            = $show_debug ? $this->sync->debug( $selected_form_id > 0 ? $selected_form_id : null ) : null;
 		$sync_result      = get_transient( 'hlavas_sync_result' );
 
 		if ( $sync_result ) {
@@ -1843,22 +1883,42 @@ class Hlavas_Terms_Admin {
 	 * @return void
 	 */
 	public function page_settings(): void {
-		$message            = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
-		$form_id            = hlavas_terms_get_form_id();
-		$debug_mode         = hlavas_terms_is_debug_enabled();
-		$sync_value_mode    = hlavas_terms_get_sync_value_mode();
-		$report_email       = hlavas_terms_get_report_email();
-		$field_map          = hlavas_terms_get_field_map();
-		$activity_log_path  = hlavas_terms_get_log_file_path();
-		$activity_log_lines = hlavas_terms_get_log_lines( 200 );
-		$plugin_info        = hlavas_terms_get_plugin_info();
-		$types              = $this->type_repo->get_all();
-		$settings_status    = $this->get_settings_status();
-		$form_registry      = $this->get_settings_form_registry( $types, $form_id );
+		$message               = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
+		$form_id               = hlavas_terms_get_form_id();
+		$debug_mode            = hlavas_terms_is_debug_enabled();
+		$sync_value_mode       = hlavas_terms_get_sync_value_mode();
+		$report_email          = hlavas_terms_get_report_email();
+		$field_map             = hlavas_terms_get_field_map();
+		$types                 = $this->type_repo->get_all();
+		$settings_status       = $this->get_settings_status();
+		$form_registry         = $this->get_settings_form_registry( $types, $form_id );
 		$form_mapping_sections = $this->sync->get_form_sections();
-		$sync_log           = hlavas_terms_get_sync_log();
 
 		include HLAVAS_TERMS_DIR . 'admin/views/settings.php';
+	}
+
+	/**
+	 * Render diagnostics / service page.
+	 *
+	 * @return void
+	 */
+	public function page_diagnostics(): void {
+		$message            = sanitize_text_field( wp_unslash( $_GET['message'] ?? '' ) );
+		$selected_form_id   = absint( $_GET['form_id'] ?? 0 );
+		$show_debug         = hlavas_terms_is_debug_enabled() || isset( $_GET['debug'] );
+		$form_sections      = $this->sync->get_form_sections();
+		$debug              = $show_debug ? $this->sync->debug( $selected_form_id > 0 ? $selected_form_id : null ) : null;
+		$sync_result        = get_transient( 'hlavas_sync_result' );
+		$activity_log_path  = hlavas_terms_get_log_file_path();
+		$activity_log_lines = hlavas_terms_get_log_lines( 200 );
+		$settings_status    = $this->get_settings_status();
+		$plugin_info        = hlavas_terms_get_plugin_info();
+
+		if ( $sync_result ) {
+			delete_transient( 'hlavas_sync_result' );
+		}
+
+		include HLAVAS_TERMS_DIR . 'admin/views/diagnostics.php';
 	}
 
 	/**
@@ -2168,14 +2228,37 @@ class Hlavas_Terms_Admin {
 	}
 
 	/**
+	 * Resolve qualification accreditation code for a term.
+	 *
+	 * @param int $qualification_type_id Qualification type ID.
+	 * @return string|null
+	 */
+	private function get_term_qualification_code( int $qualification_type_id ): ?string {
+		if ( $qualification_type_id <= 0 ) {
+			return null;
+		}
+
+		$type = $this->type_repo->find( $qualification_type_id );
+
+		if ( ! $type ) {
+			return null;
+		}
+
+		$code = trim( (string) ( $type->accreditation_number ?? '' ) );
+
+		return '' !== $code ? $code : null;
+	}
+
+	/**
 	 * Render plugin info page.
 	 *
 	 * @return void
 	 */
 	public function page_info(): void {
-		$plugin_info   = hlavas_terms_get_plugin_info();
-		$types         = $this->type_repo->get_all();
-		$form_registry = $this->get_settings_form_registry( $types, hlavas_terms_get_form_id() );
+		$plugin_info     = hlavas_terms_get_plugin_info();
+		$types           = $this->type_repo->get_all();
+		$form_registry   = $this->get_settings_form_registry( $types, hlavas_terms_get_form_id() );
+		$settings_status = $this->get_settings_status();
 
 		include HLAVAS_TERMS_DIR . 'admin/views/info.php';
 	}

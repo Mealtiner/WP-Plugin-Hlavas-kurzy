@@ -7,6 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /** @var string $report_message */
 /** @var array<string, mixed> $filters */
 /** @var array<string, string> $sync_log */
+/** @var array<int, int> $enrolled_counts */
 
 $current_page   = sanitize_key( (string) ( $_GET['page'] ?? 'hlavas-terms' ) );
 $report_actions = in_array( $current_page, [ 'hlavas-terms-kurzy', 'hlavas-terms-zkousky' ], true );
@@ -59,7 +60,7 @@ if ( ! empty( $form_sync_timestamps ) ) {
 				name="hlavas_sync_execute"
 				value="1"
 				class="page-title-action"
-				onclick="return confirm('Opravdu spustit FF synchronizaci pro vsechny nakonfigurovane formulare?');"
+				onclick="return confirm('Opravdu spustit FF synchronizaci pro všechny nakonfigurované formuláře?');"
 			>
 				FF synchronizace
 			</button>
@@ -194,6 +195,7 @@ if ( ! empty( $form_sync_timestamps ) ) {
 					<th class="column-date">Datum do</th>
 					<th class="column-deadline">Uzávěrka</th>
 					<th class="column-capacity">Kapacita</th>
+					<th class="column-enrolled">Přihlášeno</th>
 					<th class="column-synced">FF sync</th>
 					<th class="column-visible">Web</th>
 					<th class="column-active">Aktivní</th>
@@ -204,7 +206,7 @@ if ( ! empty( $form_sync_timestamps ) ) {
 			</thead>
 			<tbody>
 				<?php if ( empty( $terms ) ) : ?>
-					<tr><td colspan="15">Žádné termíny nebyly nalezeny.</td></tr>
+					<tr><td colspan="16">Žádné termíny nebyly nalezeny.</td></tr>
 				<?php else : ?>
 					<?php
 					$today = current_time( 'Y-m-d' );
@@ -218,6 +220,7 @@ if ( ! empty( $form_sync_timestamps ) ) {
 						$title              = ! empty( $term->title ) ? $term->title : $term->label;
 						$qualification      = ! empty( $term->qualification_name ) ? $term->qualification_name : 'Bez návaznosti';
 						$qualification_code = ! empty( $term->qualification_code ) ? $term->qualification_code : '';
+						$enrolled_count     = (int) ( $enrolled_counts[ (int) $term->id ] ?? 0 );
 						$last_synced_at     = (string) ( $sync_log[ (string) $term->id ] ?? '' );
 						$visibility_url     = wp_nonce_url(
 							admin_url( 'admin.php?page=' . rawurlencode( $current_page ) . '&action=toggle_visibility&term_id=' . $term->id ),
@@ -252,6 +255,7 @@ if ( ! empty( $form_sync_timestamps ) ) {
 							<td class="column-date"><?php echo esc_html( (string) ( $term->date_end ?? '—' ) ); ?></td>
 							<td class="column-deadline"><?php echo esc_html( (string) ( $term->enrollment_deadline ?: '—' ) ); ?></td>
 							<td class="column-capacity"><?php echo esc_html( (string) $term->capacity ); ?></td>
+							<td class="column-enrolled"><?php echo esc_html( (string) $enrolled_count ); ?></td>
 							<td class="column-synced">
 								<?php if ( '' !== $last_synced_at ) : ?>
 									<?php echo esc_html( $last_synced_at ); ?>

@@ -123,7 +123,7 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 	<?php elseif ( 'report_failed' === $report_message ) : ?>
 		<div class="notice notice-error is-dismissible"><p>Report se nepodařilo vygenerovat.</p></div>
 	<?php elseif ( 'participant_term_pairing_saved' === $report_message ) : ?>
-		<div class="notice notice-success is-dismissible"><p>Účastník byl úspěšně spárován se správným termínem.</p></div>
+		<div class="notice notice-success is-dismissible"><p>Termín účastníka byl úspěšně uložen. Změna se promítla i do kapacit a obsazenosti.</p></div>
 	<?php elseif ( 'participant_term_pairing_cleared' === $report_message ) : ?>
 		<div class="notice notice-warning is-dismissible"><p>Ruční párování účastníka s termínem bylo zrušeno.</p></div>
 	<?php elseif ( 'participant_term_pairing_failed' === $report_message ) : ?>
@@ -280,7 +280,7 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 							<?php if ( ! empty( $participant['is_unmatched'] ) ) : ?>
 								<div class="hlavas-subline"><em>Historický / nepárovaný záznam</em></div>
 							<?php elseif ( ! empty( $participant['is_manual_match'] ) ) : ?>
-								<div class="hlavas-subline"><em>Ručně spárováno</em></div>
+								<div class="hlavas-subline"><em>Ručně spárováno / přesunuto</em></div>
 							<?php endif; ?>
 							<div class="hlavas-subline"><?php echo esc_html( (string) $participant['qualification'] ); ?></div>
 							<?php if ( ! empty( $participant['registration_type'] ) ) : ?>
@@ -295,7 +295,8 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 							<?php if ( ! empty( $participant['term_key'] ) ) : ?>
 								<code class="hlavas-subline-code"><?php echo esc_html( (string) $participant['term_key'] ); ?></code>
 							<?php endif; ?>
-							<?php if ( ! empty( $participant['is_unmatched'] ) || ! empty( $participant['is_manual_match'] ) ) : ?>
+
+							<?php if ( ! empty( $participant['term_type'] ) ) : ?>
 								<?php
 								$participant_term_options = array_values(
 									array_filter(
@@ -315,7 +316,7 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 										}
 									)
 								);
-								$current_manual_term_id = ! empty( $participant['is_manual_match'] ) ? (int) ( $participant['term_id'] ?? 0 ) : 0;
+								$current_term_id = (int) ( $participant['term_id'] ?? 0 );
 								?>
 								<form method="post" class="hlavas-participant-pairing-form">
 									<?php wp_nonce_field( 'hlavas_participant_pairing', '_hlavas_participant_pairing_nonce' ); ?>
@@ -326,16 +327,23 @@ $render_sort_label = static function ( string $label, string $sort_by ) use ( $f
 									<input type="hidden" name="participant_term_id" value="<?php echo esc_attr( (string) ( $filters['term_id'] ?? 0 ) ); ?>">
 									<input type="hidden" name="participant_sort_by" value="<?php echo esc_attr( (string) ( $filters['sort_by'] ?? 'created_at' ) ); ?>">
 									<input type="hidden" name="participant_sort_order" value="<?php echo esc_attr( (string) ( $filters['sort_order'] ?? 'desc' ) ); ?>">
-									<select name="manual_term_id">
-										<option value="0"><?php echo esc_html( ! empty( $participant['is_manual_match'] ) ? 'Zrušit ruční párování' : 'Vyber správný termín' ); ?></option>
+									<label class="screen-reader-text" for="hlavas-manual-term-<?php echo esc_attr( (string) $participant['submission_id'] ); ?>">Vyber správný termín</label>
+									<select id="hlavas-manual-term-<?php echo esc_attr( (string) $participant['submission_id'] ); ?>" name="manual_term_id">
+										<?php if ( ! empty( $participant['is_manual_match'] ) ) : ?>
+											<option value="0">Zrušit ruční přesun a vrátit automatické párování</option>
+										<?php elseif ( ! empty( $participant['is_unmatched'] ) ) : ?>
+											<option value="0">Vyber správný termín</option>
+										<?php else : ?>
+											<option value="0">Ponechat aktuální automaticky rozpoznaný termín</option>
+										<?php endif; ?>
 										<?php foreach ( $participant_term_options as $term_option ) : ?>
 											<?php $term_option_title = ! empty( $term_option->title ) ? (string) $term_option->title : (string) $term_option->label; ?>
-											<option value="<?php echo esc_attr( (string) $term_option->id ); ?>" <?php selected( $current_manual_term_id, (int) $term_option->id ); ?>>
+											<option value="<?php echo esc_attr( (string) $term_option->id ); ?>" <?php selected( $current_term_id, (int) $term_option->id ); ?>>
 												<?php echo esc_html( $term_option_title ); ?>
 											</option>
 										<?php endforeach; ?>
 									</select>
-									<button type="submit" name="hlavas_participant_term_pairing_save" value="1" class="button button-small">Uložit párování</button>
+									<button type="submit" name="hlavas_participant_term_pairing_save" value="1" class="button button-small"><?php echo ! empty( $participant['is_unmatched'] ) ? 'Uložit párování' : 'Uložit termín'; ?></button>
 								</form>
 							<?php endif; ?>
 						</td>
