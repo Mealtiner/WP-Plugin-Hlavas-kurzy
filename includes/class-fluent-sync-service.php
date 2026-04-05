@@ -283,7 +283,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 		$updated = 0;
 
 		foreach ( $configs as $config ) {
-			$result   = $this->execute_for_configuration( $config, $value_mode );
+			$result   = $this->execute_for_configuration_v2( $config, $value_mode );
 			$details  = array_merge( $details, $result['details'] );
 			$updated += ! empty( $result['updated'] ) ? 1 : 0;
 		}
@@ -342,7 +342,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 		$updated = 0;
 
 		foreach ( $configs as $config ) {
-			$result = $this->execute_for_configuration( $config, $value_mode, $term_ids, true );
+			$result = $this->execute_for_configuration_v2( $config, $value_mode, $term_ids, true );
 
 			if ( ! empty( $result['skipped'] ) ) {
 				continue;
@@ -1277,17 +1277,29 @@ class Hlavas_Terms_Fluent_Sync_Service {
 					$field['settings'] = [];
 				}
 
+				$existing_options = is_array( $field['settings']['advanced_options'] ?? null )
+					? $field['settings']['advanced_options']
+					: [];
+				$public_terms     = array_values(
+					array_filter(
+						(array) $target['terms'],
+						fn( object $term ): bool => $this->is_term_publicly_syncable( $term )
+					)
+				);
 				$selected_options = [];
 
 				foreach ( $target['terms'] as $term ) {
-					$selected_options[] = $this->build_term_option( $term, $value_mode );
-					$synced_term_ids[]  = (int) $term->id;
+					$synced_term_ids[] = (int) $term->id;
 				}
 
-				$existing_options                         = $field['settings']['advanced_options'] ?? [];
-				$field['settings']['advanced_options']    = $this->merge_selected_term_options(
-					is_array( $existing_options ) ? $existing_options : [],
-					$target['terms'],
+				foreach ( $public_terms as $term ) {
+					$selected_options[] = $this->build_term_option( $term, $value_mode );
+				}
+
+				$field['settings']['advanced_options'] = $this->merge_selected_term_options(
+					$existing_options,
+					(array) $target['terms'],
+					$public_terms,
 					$selected_options
 				);
 				$field['settings']['inventory_type']      = 'simple';
@@ -1302,7 +1314,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 
 				$this->set_field_by_path( $fields, $field_path, $field );
 
-				$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" synchronizovano (' . count( $target['terms'] ) . ' vybranych terminu).';
+				$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" synchronizovano (' . count( $public_terms ) . ' zobrazeno / ' . count( $target['terms'] ) . ' vybranych zpracovano).';
 				$changed   = true;
 			}
 		} else {
@@ -1417,6 +1429,172 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	}
 
 	/**
+	 * Updated sync executor.
+	 *
+	 * Public sync exports only syncable terms. Selected sync can also remove
+	 * one hidden / archived / expired term from an already synchronized field.
+	 *
+	 * @param array<string, mixed> $config Configuration.
+	 * @param string               $value_mode Value mode.
+	 * @param array<int, int>      $selected_term_ids Selected term IDs.
+	 * @param bool                 $selected_only Whether to sync only selected terms.
+	 * @return array{updated: bool, details: array<int, string>, skipped: bool}
+	 */
+	private function execute_for_configuration_v2( array $config, string $value_mode, array $selected_term_ids = [], bool $selected_only = false ): array {
+		global $wpdb;
+		/** @var wpdb $wpdb */
+
+		$form_id = (int) $config['form_id'];
+		$form    = $this->get_form_by_id( $form_id );
+
+		if ( ! $form ) {
+			return [
+				'updated' => false,
+				'details' => [
+					'Formular ID ' . $form_id . ' nebyl nalezen.',
+				],
+				'skipped' => false,
+			];
+		}
+
+		$fields          = $this->parse_form_fields( $form );
+		$targets         = $this->get_targets_for_configuration( $config, $selected_term_ids, $selected_only );
+		$changed         = false;
+		$details         = [];
+		$synced_term_ids = [];
+
+		if ( $selected_only && empty( $targets ) ) {
+			return [
+				'updated' => false,
+				'details' => [],
+				'skipped' => true,
+			];
+		}
+
+		foreach ( $targets as $identifier => $target ) {
+			$field_path = $this->find_field_path_by_aliases(
+				$fields,
+				$this->get_aliases_for_form( $form_id, $identifier, (array) self::SYNC_FIELDS[ $identifier ]['aliases'] )
+			);
+
+			if ( null === $field_path ) {
+				$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" nebylo nalezeno.';
+				continue;
+			}
+
+			$field = $this->get_field_by_path( $fields, $field_path );
+
+			if ( ! is_array( $field ) ) {
+				$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" se nepodarilo nacist.';
+				continue;
+			}
+
+			if ( ! isset( $field['settings'] ) || ! is_array( $field['settings'] ) ) {
+				$field['settings'] = [];
+			}
+
+			if ( $selected_only ) {
+				$selected_terms = array_values( array_filter( (array) ( $target['terms'] ?? [] ) ) );
+
+				if ( empty( $selected_terms ) ) {
+					continue;
+				}
+
+				$public_terms = array_values(
+					array_filter(
+						$selected_terms,
+						fn( object $term ): bool => $this->is_term_publicly_syncable( $term )
+					)
+				);
+
+				foreach ( $selected_terms as $term ) {
+					$synced_term_ids[] = (int) $term->id;
+				}
+
+				$field['settings']['advanced_options'] = $this->sync_selected_term_options(
+					is_array( $field['settings']['advanced_options'] ?? null ) ? $field['settings']['advanced_options'] : [],
+					$selected_terms,
+					$public_terms,
+					$value_mode
+				);
+
+				$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" synchronizovano (' . count( $public_terms ) . ' zobrazeno / ' . count( $selected_terms ) . ' vybranych zpracovano).';
+			} else {
+				$options = [];
+
+				foreach ( (array) ( $target['terms'] ?? [] ) as $term ) {
+					$options[]         = $this->build_public_term_option( $term, $value_mode );
+					$synced_term_ids[] = (int) $term->id;
+				}
+
+				$field['settings']['advanced_options'] = $options;
+				$details[]                             = 'Formular #' . $form_id . ': pole "' . $identifier . '" synchronizovano (' . count( $options ) . ' verejnych terminu).';
+			}
+
+			$field['settings']['inventory_type']              = 'simple';
+			$field['settings']['inventory_stockout_message']  = (string) ( $field['settings']['inventory_stockout_message'] ?? 'Tenhle termin uz je bohuzel plny.' );
+			$field['settings']['hide_choice_when_stockout']   = (string) ( $field['settings']['hide_choice_when_stockout'] ?? 'no' );
+			$field['settings']['hide_input_when_stockout']    = (string) ( $field['settings']['hide_input_when_stockout'] ?? 'no' );
+			$field['settings']['disable_input_when_stockout'] = (string) ( $field['settings']['disable_input_when_stockout'] ?? 'no' );
+			$field['settings']['show_stock']                  = (string) ( $field['settings']['show_stock'] ?? 'yes' );
+			$field['settings']['simple_inventory']            = (string) ( $field['settings']['simple_inventory'] ?? '' );
+			$field['settings']['stock_quantity_label']        = (string) ( $field['settings']['stock_quantity_label'] ?? ' - {remaining_quantity} available' );
+			unset( $field['settings']['inventory_settings'] );
+
+			$this->set_field_by_path( $fields, $field_path, $field );
+			$changed = true;
+		}
+
+		if ( ! $changed ) {
+			return [
+				'updated' => false,
+				'details' => $details,
+				'skipped' => false,
+			];
+		}
+
+		$table_forms      = $wpdb->prefix . 'fluentform_forms';
+		$form_fields_json = wp_json_encode( $fields );
+		$updated          = $wpdb->update(
+			$table_forms,
+			[
+				'form_fields' => $form_fields_json,
+				'updated_at'  => current_time( 'mysql', true ),
+			],
+			[
+				'id' => $form_id,
+			],
+			[
+				'%s',
+				'%s',
+			],
+			[
+				'%d',
+			]
+		);
+
+		if ( false === $updated ) {
+			$details[] = 'Formular #' . $form_id . ': chyba pri ukladani - ' . $wpdb->last_error;
+
+			return [
+				'updated' => false,
+				'details' => $details,
+				'skipped' => false,
+			];
+		}
+
+		$this->sync_inventory_meta( $form_id, $fields );
+		hlavas_terms_mark_terms_synced( $synced_term_ids );
+		hlavas_terms_mark_forms_synced( [ $form_id ] );
+
+		return [
+			'updated' => true,
+			'details' => $details,
+			'skipped' => false,
+		];
+	}
+
+	/**
 	 * Get target terms per sync field for one configuration.
 	 *
 	 * @param array<string, mixed> $config Configuration.
@@ -1451,7 +1629,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 
 			$terms = $selected_only
 				? $this->get_selected_terms( $term_type, $include_all_for_type ? [] : $qualification_ids, $selected_term_ids )
-				: $this->get_export_terms( $term_type, $include_all_for_type ? [] : $qualification_ids );
+				: $this->get_public_sync_terms( $term_type, $include_all_for_type ? [] : $qualification_ids );
 
 			if ( $selected_only && empty( $terms ) ) {
 				continue;
@@ -2059,6 +2237,32 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	}
 
 	/**
+	 * Get only terms that should appear in public Fluent Forms fields.
+	 *
+	 * @param string          $term_type kurz|zkouska
+	 * @param array<int, int> $qualification_ids Qualification IDs.
+	 * @return array<int, object>
+	 */
+	private function get_public_sync_terms( string $term_type, array $qualification_ids = [] ): array {
+		$terms = $this->repo->get_syncable( $term_type );
+
+		if ( ! empty( $qualification_ids ) ) {
+			$qualification_ids = array_values( array_filter( array_map( 'intval', $qualification_ids ) ) );
+
+			$terms = array_values(
+				array_filter(
+					$terms,
+					static function ( object $term ) use ( $qualification_ids ): bool {
+						return in_array( (int) ( $term->qualification_type_id ?? 0 ), $qualification_ids, true );
+					}
+				)
+			);
+		}
+
+		return array_values( $terms );
+	}
+
+	/**
 	 * Get only selected terms for one target scope.
 	 *
 	 * @param string          $term_type Term type.
@@ -2102,6 +2306,26 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	}
 
 	/**
+	 * Build one public Fluent Forms option row using remaining capacity.
+	 *
+	 * @param object $term Plugin term object.
+	 * @param string $value_mode term_key|label
+	 * @return array<string, mixed>
+	 */
+	private function build_public_term_option( object $term, string $value_mode ): array {
+		$value     = 'label' === $value_mode ? (string) $term->label : (string) $term->term_key;
+		$remaining = $this->availability->get_remaining( (string) ( $term->term_key ?? '' ) );
+
+		return [
+			'label'      => (string) $term->label,
+			'value'      => $value,
+			'calc_value' => (string) $remaining,
+			'image'      => '',
+			'quantity'   => $remaining,
+		];
+	}
+
+	/**
 	 * Merge selected synchronized terms into existing form options.
 	 *
 	 * @param array<int, array<string, mixed>>  $existing_options Existing FF options.
@@ -2125,6 +2349,57 @@ class Hlavas_Terms_Fluent_Sync_Service {
 		}
 
 		return array_values( $existing_options );
+	}
+
+	/**
+	 * Synchronize only selected terms inside one already existing FF options list.
+	 *
+	 * Selected terms are first removed from the existing options and then only
+	 * currently public terms are added back. This lets one targeted sync both
+	 * update visible terms and remove hidden / archived / expired ones.
+	 *
+	 * @param array<int, array<string, mixed>> $existing_options Existing FF options.
+	 * @param array<int, object>               $selected_terms Selected plugin terms.
+	 * @param array<int, object>               $public_terms Publicly syncable selected terms.
+	 * @param string                           $value_mode term_key|label
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function sync_selected_term_options( array $existing_options, array $selected_terms, array $public_terms, string $value_mode ): array {
+		foreach ( $selected_terms as $term ) {
+			$matched_index = $this->find_matching_option_index( $existing_options, $term );
+
+			if ( null !== $matched_index ) {
+				unset( $existing_options[ $matched_index ] );
+			}
+		}
+
+		$existing_options = array_values( $existing_options );
+
+		foreach ( $public_terms as $term ) {
+			$existing_options[] = $this->build_public_term_option( $term, $value_mode );
+		}
+
+		return array_values( $existing_options );
+	}
+
+	/**
+	 * Check whether one term should currently be visible in the public form.
+	 *
+	 * @param object $term Plugin term.
+	 * @return bool
+	 */
+	private function is_term_publicly_syncable( object $term ): bool {
+		if ( empty( $term->is_active ) || ! empty( $term->is_archived ) || empty( $term->is_visible ) ) {
+			return false;
+		}
+
+		$cutoff = (string) ( $term->enrollment_deadline ?? $term->date_start ?? $term->date_end ?? '' );
+
+		if ( '' === $cutoff ) {
+			return true;
+		}
+
+		return $cutoff >= current_time( 'Y-m-d' );
 	}
 
 	/**

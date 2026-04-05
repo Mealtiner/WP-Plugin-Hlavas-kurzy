@@ -324,6 +324,17 @@ document.addEventListener('DOMContentLoaded', function() {
 			return;
 		}
 
+		let bulkTrigger = bulkForm.querySelector('input[name="hlavas_bulk_action"]');
+		if (!bulkTrigger) {
+			bulkTrigger = document.createElement('input');
+			bulkTrigger.type = 'hidden';
+			bulkTrigger.name = 'hlavas_bulk_action';
+			bulkTrigger.value = '1';
+			bulkForm.appendChild(bulkTrigger);
+		} else {
+			bulkTrigger.value = '1';
+		}
+
 		bulkActionSelect.value = 'sync';
 		bulkForm.submit();
 	});

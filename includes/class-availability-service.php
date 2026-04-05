@@ -59,23 +59,55 @@ class Hlavas_Terms_Availability_Service {
      * @param string $term_key The internal term key.
      * @return int Number of active enrollments.
      */
-    public function count_enrollments( string $term_key ): int {
-        $term = $this->repo->find_by_key( $term_key );
+	public function count_enrollments( string $term_key ): int {
+		global $wpdb;
+		/** @var wpdb $wpdb */
 
-        if ( ! $term ) {
-            return 0;
-        }
+		$entry_table      = $wpdb->prefix . 'fluentform_entry_details';
+		$submission_table = $wpdb->prefix . 'fluentform_submissions';
 
-        $count = 0;
+		if ( ! $this->table_exists( $entry_table ) || ! $this->table_exists( $submission_table ) ) {
+			return 0;
+		}
 
-        foreach ( $this->get_resolved_participants() as $participant ) {
-            if ( (int) ( $participant['term_id'] ?? 0 ) === (int) $term->id ) {
-                $count++;
-            }
-        }
+		$form_ids = hlavas_terms_get_all_form_ids();
 
-        return $count;
-    }
+		if ( empty( $form_ids ) ) {
+			return 0;
+		}
+
+		$term            = $this->repo->find_by_key( $term_key );
+		$values_to_check = [ $term_key ];
+
+		if ( $term && ! empty( $term->label ) ) {
+			$values_to_check[] = (string) $term->label;
+		}
+
+		$form_placeholders  = implode( ',', array_fill( 0, count( $form_ids ), '%d' ) );
+		$field_placeholders = implode( ',', array_fill( 0, count( self::TERM_FIELDS ), '%s' ) );
+		$value_placeholders = implode( ',', array_fill( 0, count( $values_to_check ), '%s' ) );
+
+		$count = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(DISTINCT e.submission_id)
+				FROM {$entry_table} e
+				INNER JOIN {$submission_table} s ON e.submission_id = s.id
+				WHERE e.form_id IN ({$form_placeholders})
+					AND e.field_name IN ({$field_placeholders})
+					AND e.field_value IN ({$value_placeholders})
+					AND s.status != 'trashed'",
+				...$form_ids,
+				...self::TERM_FIELDS,
+				...$values_to_check
+			)
+		);
+
+		if ( $count > 0 ) {
+			return $count;
+		}
+
+		return $this->count_enrollments_from_responses( $term_key );
+	}
 
     /**
      * Alternative counting method: query the submissions.response JSON directly.
