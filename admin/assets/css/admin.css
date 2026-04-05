@@ -969,15 +969,16 @@
     font-size: 12px;
 }
 
-@media (max-width: 960px) {
-    .hlavas-docs-grid { grid-template-columns: 1fr; }
-}
-
 /* ---------------------------------------------------------------
  * Shortcode reference (settings page sidebar)
  * ------------------------------------------------------------- */
 .hlavas-shortcodes-reference .description {
     margin-bottom: 14px;
+}
+.hlavas-shortcodes-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
 }
 .hlavas-shortcode-card {
     background: #f8fafc;
@@ -1052,18 +1053,32 @@
 .hlavas-section-nav a {
     display: inline-flex;
     align-items: center;
-    padding: 8px 12px;
-    background: #fff;
-    border: 1px solid #dcdcde;
-    border-radius: 999px;
+    justify-content: center;
+    min-height: 34px;
+    padding: 6px 14px;
+    background: #f6f7f7;
+    border: 1px solid #2271b1;
+    border-radius: 4px;
     text-decoration: none;
     font-weight: 600;
+    color: #2271b1;
+    box-sizing: border-box;
+}
+.hlavas-section-nav a:hover,
+.hlavas-section-nav a:focus {
+    background: #f0f6fc;
+    color: #135e96;
+    border-color: #135e96;
 }
 .hlavas-doc-card {
     background: #fff;
     border: 1px solid #dcdcde;
     border-radius: 6px;
     padding: 16px 18px;
+}
+.hlavas-doc-card-wide {
+    width: 100%;
+    box-sizing: border-box;
 }
 .hlavas-doc-card h3 {
     margin-top: 0;
@@ -1080,4 +1095,25 @@
 .hlavas-flat-list li {
     margin-bottom: 8px;
     line-height: 1.6;
+}
+.hlavas-info-tech-table {
+    width: 100%;
+    table-layout: auto !important;
+}
+.hlavas-info-tech-table th {
+    width: 240px;
+}
+.hlavas-settings-linked-forms {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid #dcdcde;
+}
+.hlavas-settings-linked-forms h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+@media (max-width: 960px) {
+    .hlavas-docs-grid { grid-template-columns: 1fr; }
+    .hlavas-shortcodes-grid { grid-template-columns: 1fr; }
 }

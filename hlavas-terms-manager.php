@@ -3,11 +3,12 @@
  * Plugin Name: HLAVAS – Správa termínů kurzů a zkoušek
  * Plugin URI:  https://hlavas.cz
  * Description: Centrální správa termínů kurzů a zkoušek se synchronizací do Fluent Forms pro projekt HLAVAS.cz realizovaný Jihomoravskou radou dětí a mládeže (JRDM).
- * Version:     1.3.1
+ * Version:     1.3.4
  * Author:      Michal "Mealtiner" Truhlář
  * Author URI:  https://mealtiner.cz
  * Text Domain: hlavas-terms
  * Domain Path: /languages
+ * Requires Plugins: fluentform
  * Requires PHP: 8.4
  * Requires at least: 6.0
  * License:     GPL v2 or later
@@ -23,7 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Plugin constants.
  */
-define( 'HLAVAS_TERMS_VERSION', '1.3.1' );
+define( 'HLAVAS_TERMS_VERSION', '1.3.4' );
 define( 'HLAVAS_TERMS_FILE', __FILE__ );
 define( 'HLAVAS_TERMS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HLAVAS_TERMS_URL', plugin_dir_url( __FILE__ ) );
@@ -40,6 +41,7 @@ define( 'HLAVAS_TERMS_OPTION_REPORT_EMAIL', 'hlavas_terms_report_email' );
 define( 'HLAVAS_TERMS_OPTION_FIELD_MAP', 'hlavas_terms_field_map' );
 define( 'HLAVAS_TERMS_OPTION_PARTICIPANT_TERM_MAP', 'hlavas_terms_participant_term_map' );
 define( 'HLAVAS_TERMS_OPTION_PLUGIN_VERSION', 'hlavas_terms_plugin_version' );
+define( 'HLAVAS_TERMS_TRANSIENT_DEPENDENCY_NOTICE', 'hlavas_terms_dependency_notice' );
 define( 'HLAVAS_TERMS_DEFAULT_FORM_ID', 3 );
 define( 'HLAVAS_TERMS_PLUGIN_NAME', 'HLAVAS – Správa termínů kurzů a zkoušek' );
 define( 'HLAVAS_TERMS_PLUGIN_SLUG', 'hlavas-terms' );
@@ -127,6 +129,154 @@ function hlavas_terms_get_form_id(): int {
 
 	return $form_id > 0 ? $form_id : HLAVAS_TERMS_DEFAULT_FORM_ID;
 }
+
+/**
+ * Returns Fluent Forms dependency state for admin checks and notices.
+ *
+ * @return array<string, bool|string>
+ */
+function hlavas_terms_get_fluent_forms_dependency_state(): array {
+	if ( ! function_exists( 'get_plugins' ) ) {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+	}
+
+	$free_plugin = 'fluentform/fluentform.php';
+	$pro_plugin  = 'fluentformpro/fluentformpro.php';
+	$plugins     = get_plugins();
+
+	$free_installed = isset( $plugins[ $free_plugin ] );
+	$pro_installed  = isset( $plugins[ $pro_plugin ] );
+	$free_active    = $free_installed && is_plugin_active( $free_plugin );
+	$pro_active     = $pro_installed && is_plugin_active( $pro_plugin );
+	$runtime_ready  = function_exists( 'wpFluent' ) || $free_active || $pro_active;
+
+	return [
+		'free_plugin'    => $free_plugin,
+		'pro_plugin'     => $pro_plugin,
+		'free_installed' => $free_installed,
+		'pro_installed'  => $pro_installed,
+		'free_active'    => $free_active,
+		'pro_active'     => $pro_active,
+		'runtime_ready'  => $runtime_ready,
+	];
+}
+
+/**
+ * Whether the Fluent Forms dependency is currently ready.
+ *
+ * @return bool
+ */
+function hlavas_terms_is_fluent_forms_ready(): bool {
+	$state = hlavas_terms_get_fluent_forms_dependency_state();
+
+	return ! empty( $state['runtime_ready'] );
+}
+
+/**
+ * Returns install URL for the free Fluent Forms plugin.
+ *
+ * @return string
+ */
+function hlavas_terms_get_fluent_forms_install_url(): string {
+	return wp_nonce_url(
+		self_admin_url( 'update.php?action=install-plugin&plugin=fluentform' ),
+		'install-plugin_fluentform'
+	);
+}
+
+/**
+ * Returns activation URL for a plugin file.
+ *
+ * @param string $plugin_file Plugin basename.
+ * @return string
+ */
+function hlavas_terms_get_plugin_activation_url( string $plugin_file ): string {
+	return wp_nonce_url(
+		self_admin_url(
+			add_query_arg(
+				[
+					'action' => 'activate',
+					'plugin' => $plugin_file,
+				],
+				'plugins.php'
+			)
+		),
+		'activate-plugin_' . $plugin_file
+	);
+}
+
+/**
+ * Stores a one-time dependency notice to be shown after activation.
+ *
+ * @param string $reason Notice reason.
+ * @return void
+ */
+function hlavas_terms_store_dependency_notice( string $reason = 'missing' ): void {
+	set_transient(
+		HLAVAS_TERMS_TRANSIENT_DEPENDENCY_NOTICE,
+		[
+			'reason' => sanitize_key( $reason ),
+			'time'   => time(),
+		],
+		5 * MINUTE_IN_SECONDS
+	);
+}
+
+/**
+ * Renders admin notice when Fluent Forms is missing or inactive.
+ *
+ * @return void
+ */
+function hlavas_terms_render_dependency_notice(): void {
+	if ( ! is_admin() || ! current_user_can( 'activate_plugins' ) ) {
+		return;
+	}
+
+	$state        = hlavas_terms_get_fluent_forms_dependency_state();
+	$notice_once  = get_transient( HLAVAS_TERMS_TRANSIENT_DEPENDENCY_NOTICE );
+	$must_display = ! empty( $notice_once ) || ! hlavas_terms_is_fluent_forms_ready();
+
+	if ( ! $must_display ) {
+		return;
+	}
+
+	if ( ! empty( $notice_once ) ) {
+		delete_transient( HLAVAS_TERMS_TRANSIENT_DEPENDENCY_NOTICE );
+	}
+
+	$action_label = '';
+	$action_url   = '';
+
+	if ( ! $state['free_installed'] ) {
+		$action_label = 'Nainstalovat Fluent Forms';
+		$action_url   = hlavas_terms_get_fluent_forms_install_url();
+	} elseif ( ! $state['free_active'] ) {
+		$action_label = 'Aktivovat Fluent Forms';
+		$action_url   = hlavas_terms_get_plugin_activation_url( (string) $state['free_plugin'] );
+	}
+	?>
+	<div class="notice notice-warning">
+		<p><strong>HLAVAS – Správa termínů kurzů a zkoušek vyžaduje Fluent Forms.</strong></p>
+		<p>
+			Pro správný chod pluginu HLAVAS je potřeba mít nainstalovaný a aktivní plugin
+			<strong>Fluent Forms</strong>. Pokud používáš <strong>Fluent Forms Pro Add On Pack</strong>,
+			měj aktivní i základní Fluent Forms plugin. Po aktivaci pak ještě zkontroluj správné Form ID,
+			pole formuláře a návazné mapování v nastavení HLAVAS pluginu.
+		</p>
+		<?php if ( '' !== $action_url && '' !== $action_label ) : ?>
+			<p>
+				<a href="<?php echo esc_url( $action_url ); ?>" class="button button-primary">
+					<?php echo esc_html( $action_label ); ?>
+				</a>
+				<a href="<?php echo esc_url( admin_url( 'plugins.php' ) ); ?>" class="button">
+					Přejít na pluginy
+				</a>
+			</p>
+		<?php endif; ?>
+	</div>
+	<?php
+}
+add_action( 'admin_notices', 'hlavas_terms_render_dependency_notice' );
 
 /**
  * Returns all Fluent Forms form IDs configured in the plugin:
@@ -674,6 +824,10 @@ add_action( 'hlavas_terms_auto_archive', 'hlavas_terms_run_auto_archive' );
  * @return void
  */
 function hlavas_terms_activate(): void {
+	if ( ! hlavas_terms_is_fluent_forms_ready() ) {
+		hlavas_terms_store_dependency_notice( 'missing_fluent_forms' );
+	}
+
 	require_once HLAVAS_TERMS_DIR . 'includes/class-activator.php';
 	Hlavas_Terms_Activator::activate( hlavas_terms_get_installed_version() );
 	hlavas_terms_ensure_log_storage();
@@ -689,6 +843,7 @@ register_activation_hook( __FILE__, 'hlavas_terms_activate' );
  */
 function hlavas_terms_deactivate(): void {
 	delete_transient( 'hlavas_terms_sync_preview' );
+	delete_transient( HLAVAS_TERMS_TRANSIENT_DEPENDENCY_NOTICE );
 	hlavas_terms_unschedule_cron();
 	hlavas_terms_log_event( 'plugin_deactivated', 'Plugin byl deaktivovan.', [], 'warning' );
 }
