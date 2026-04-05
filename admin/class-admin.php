@@ -535,7 +535,8 @@ class Hlavas_Terms_Admin {
 				$data['term_type'],
 				$data['date_start'],
 				$data['date_end'],
-				$this->get_term_qualification_code( $data['qualification_type_id'] )
+				$this->get_term_qualification_code( $data['qualification_type_id'] ),
+				$data['title']
 			);
 		}
 
@@ -630,11 +631,9 @@ class Hlavas_Terms_Admin {
 		if ( empty( $form_ids ) ) {
 			$details[] = 'Pro tento termin nebyl nalezen zadny navazany Fluent Forms formular.';
 		} else {
-			foreach ( $form_ids as $form_id ) {
-				$result   = $this->sync->execute( hlavas_terms_get_sync_value_mode(), $form_id );
-				$details  = array_merge( $details, $result['details'] );
-				$success  = $success || ! empty( $result['success'] );
-			}
+			$result  = $this->sync->execute_selected_terms( [ $term_id ], hlavas_terms_get_sync_value_mode() );
+			$details = array_values( $result['details'] ?? [] );
+			$success = ! empty( $result['success'] );
 		}
 
 		set_transient(
@@ -1237,10 +1236,11 @@ class Hlavas_Terms_Admin {
 	private function handle_bulk(): void {
 		$action = sanitize_text_field( wp_unslash( $_POST['bulk_action'] ?? '' ) );
 		$ids    = array_map( 'intval', (array) ( $_POST['term_ids'] ?? [] ) );
+		$page   = sanitize_key( (string) ( $_REQUEST['page'] ?? 'hlavas-terms' ) );
 
 		if ( empty( $ids ) || empty( $action ) ) {
 			wp_safe_redirect(
-				admin_url( 'admin.php?page=hlavas-terms' )
+				admin_url( 'admin.php?page=' . $page )
 			);
 			exit;
 		}
@@ -1271,7 +1271,8 @@ class Hlavas_Terms_Admin {
 							$term->term_type,
 							$term->date_start,
 							$term->date_end,
-							$this->get_term_qualification_code( (int) ( $term->qualification_type_id ?? 0 ) )
+							$this->get_term_qualification_code( (int) ( $term->qualification_type_id ?? 0 ) ),
+							(string) ( $term->title ?? '' )
 						);
 
 						$this->repo->update(
@@ -1285,7 +1286,7 @@ class Hlavas_Terms_Admin {
 				break;
 
 			case 'sync':
-				$this->sync->execute( hlavas_terms_get_sync_value_mode() );
+				$this->sync->execute_selected_terms( $ids, hlavas_terms_get_sync_value_mode() );
 				break;
 		}
 
@@ -1300,7 +1301,7 @@ class Hlavas_Terms_Admin {
 		);
 
 		wp_safe_redirect(
-			admin_url( 'admin.php?page=hlavas-terms&message=bulk_done' )
+			admin_url( 'admin.php?page=' . $page . '&message=bulk_done' )
 		);
 		exit;
 	}

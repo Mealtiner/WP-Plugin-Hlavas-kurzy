@@ -5,6 +5,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 return [
 	[
+		'version' => '1.3.5',
+		'date'    => '2026-04-05',
+		'summary' => 'Oprava synchronizace vybraných termínů a úprava pojmenování generovaných labelů.',
+		'items'   => [
+			'Byla opravena synchronizace termínů tak, aby na stránkách Přehled, Termíny kurzů a Termíny zkoušek pracovala jen se zaškrtnutými záznamy.',
+			'Při editaci termínu začalo tlačítko Synchronizace do FF posílat pouze právě upravovaný termín místo celé sady navázaných termínů.',
+			'Plná synchronizace na stránce Synchronizace s FF byla upravena tak, aby exportovala i minulé a archivované termíny.',
+			'Bylo sjednoceno a rozšířeno pojmenování automaticky generovaných labelů, hlavně pro kurzy navázané na typ kvalifikace.',
+			'Verze pluginu, interní konstanta i readme byly povýšeny na 1.3.5.',
+		],
+	],
+	[
 		'version' => '1.3.4',
 		'date'    => '2026-04-05',
 		'summary' => 'Kontrola závislosti na Fluent Forms při aktivaci a nové instalační upozornění v administraci.',

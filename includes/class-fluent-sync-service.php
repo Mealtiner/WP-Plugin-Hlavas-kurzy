@@ -308,6 +308,66 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	}
 
 	/**
+	 * Execute synchronization only for selected term IDs.
+	 *
+	 * Selected-term sync updates only the chosen terms inside the affected
+	 * Fluent Forms fields and leaves the rest of the field options untouched.
+	 *
+	 * @param array<int, int> $term_ids Selected plugin term IDs.
+	 * @param string          $value_mode Value mode: term_key or label.
+	 * @return array{success: bool, message: string, details: array<int, string>}
+	 */
+	public function execute_selected_terms( array $term_ids, string $value_mode = 'term_key' ): array {
+		$term_ids = array_values( array_unique( array_filter( array_map( 'intval', $term_ids ) ) ) );
+
+		if ( empty( $term_ids ) ) {
+			return [
+				'success' => false,
+				'message' => 'Nebyly vybrany zadne terminy pro synchronizaci.',
+				'details' => [],
+			];
+		}
+
+		$configs = $this->get_form_configurations();
+
+		if ( empty( $configs ) ) {
+			return [
+				'success' => false,
+				'message' => 'Neni nastaven zadny formular pro synchronizaci.',
+				'details' => [],
+			];
+		}
+
+		$details = [];
+		$updated = 0;
+
+		foreach ( $configs as $config ) {
+			$result = $this->execute_for_configuration( $config, $value_mode, $term_ids, true );
+
+			if ( ! empty( $result['skipped'] ) ) {
+				continue;
+			}
+
+			$details  = array_merge( $details, $result['details'] );
+			$updated += ! empty( $result['updated'] ) ? 1 : 0;
+		}
+
+		if ( $updated <= 0 ) {
+			return [
+				'success' => false,
+				'message' => 'Vybrane terminy se nepodarilo propsat do zadneho formularu.',
+				'details' => $details,
+			];
+		}
+
+		return [
+			'success' => true,
+			'message' => 'Synchronizace probehla pro vybrane terminy.',
+			'details' => $details,
+		];
+	}
+
+	/**
 	 * Import current term choices from configured Fluent Forms into plugin terms table.
 	 *
 	 * @param bool $replace_existing Whether to clear existing plugin terms first.
@@ -606,8 +666,8 @@ class Hlavas_Terms_Fluent_Sync_Service {
 				$user_inputs     = is_array( $raw_user_inputs ) ? $raw_user_inputs : [];
 			}
 
-			$response_result    = $this->normalize_submission_container_to_modern( $response );
-			$user_inputs_result = $this->normalize_submission_container_to_modern( $user_inputs );
+			$response_result    = $this->normalize_submission_container_to_modern( $response, (int) $row->form_id );
+			$user_inputs_result = $this->normalize_submission_container_to_modern( $user_inputs, (int) $row->form_id );
 
 			if ( ! empty( $response_result['legacy_detected'] ) || ! empty( $user_inputs_result['legacy_detected'] ) ) {
 				$legacy_detected++;
@@ -739,8 +799,8 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			$user_inputs         = is_array( $decoded_user_inputs ) ? $decoded_user_inputs : [];
 		}
 
-		$response    = $this->apply_term_to_submission_container( $response, $term );
-		$user_inputs = $this->apply_term_to_submission_container( $user_inputs, $term );
+		$response    = $this->apply_term_to_submission_container( $response, $term, (int) $row->form_id );
+		$user_inputs = $this->apply_term_to_submission_container( $user_inputs, $term, (int) $row->form_id );
 
 		$update_data   = [
 			'response' => wp_json_encode( $response, JSON_UNESCAPED_UNICODE ),
@@ -1163,7 +1223,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 * @param string               $value_mode Value mode.
 	 * @return array{updated: bool, details: array<int, string>}
 	 */
-	private function execute_for_configuration( array $config, string $value_mode ): array {
+	private function execute_for_configuration( array $config, string $value_mode, array $selected_term_ids = [], bool $selected_only = false ): array {
 		global $wpdb;
 		/** @var wpdb $wpdb */
 
@@ -1176,14 +1236,76 @@ class Hlavas_Terms_Fluent_Sync_Service {
 				'details' => [
 					'Formular ID ' . $form_id . ' nebyl nalezen.',
 				],
+				'skipped' => false,
 			];
 		}
 
-		$fields   = $this->parse_form_fields( $form );
-		$targets  = $this->get_targets_for_configuration( $config );
-		$changed  = false;
-		$details  = [];
+		$fields          = $this->parse_form_fields( $form );
+		$targets         = $this->get_targets_for_configuration( $config, $selected_term_ids, $selected_only );
+		$changed         = false;
+		$details         = [];
 		$synced_term_ids = [];
+
+		if ( $selected_only && empty( $targets ) ) {
+			return [
+				'updated' => false,
+				'details' => [],
+				'skipped' => true,
+			];
+		}
+
+		if ( $selected_only ) {
+			foreach ( $targets as $identifier => $target ) {
+				$field_path = $this->find_field_path_by_aliases(
+					$fields,
+					$this->get_aliases_for_form( $form_id, $identifier, (array) self::SYNC_FIELDS[ $identifier ]['aliases'] )
+				);
+
+				if ( null === $field_path ) {
+					$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" nebylo nalezeno.';
+					continue;
+				}
+
+				$field = $this->get_field_by_path( $fields, $field_path );
+
+				if ( ! is_array( $field ) ) {
+					$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" se nepodarilo nacist.';
+					continue;
+				}
+
+				if ( ! isset( $field['settings'] ) || ! is_array( $field['settings'] ) ) {
+					$field['settings'] = [];
+				}
+
+				$selected_options = [];
+
+				foreach ( $target['terms'] as $term ) {
+					$selected_options[] = $this->build_term_option( $term, $value_mode );
+					$synced_term_ids[]  = (int) $term->id;
+				}
+
+				$existing_options                         = $field['settings']['advanced_options'] ?? [];
+				$field['settings']['advanced_options']    = $this->merge_selected_term_options(
+					is_array( $existing_options ) ? $existing_options : [],
+					$target['terms'],
+					$selected_options
+				);
+				$field['settings']['inventory_type']      = 'simple';
+				$field['settings']['inventory_stockout_message']  = (string) ( $field['settings']['inventory_stockout_message'] ?? 'Tenhle termin uz je bohuzel plny.' );
+				$field['settings']['hide_choice_when_stockout']   = (string) ( $field['settings']['hide_choice_when_stockout'] ?? 'no' );
+				$field['settings']['hide_input_when_stockout']    = (string) ( $field['settings']['hide_input_when_stockout'] ?? 'no' );
+				$field['settings']['disable_input_when_stockout'] = (string) ( $field['settings']['disable_input_when_stockout'] ?? 'no' );
+				$field['settings']['show_stock']                  = (string) ( $field['settings']['show_stock'] ?? 'yes' );
+				$field['settings']['simple_inventory']            = (string) ( $field['settings']['simple_inventory'] ?? '' );
+				$field['settings']['stock_quantity_label']        = (string) ( $field['settings']['stock_quantity_label'] ?? ' - {remaining_quantity} available' );
+				unset( $field['settings']['inventory_settings'] );
+
+				$this->set_field_by_path( $fields, $field_path, $field );
+
+				$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" synchronizovano (' . count( $target['terms'] ) . ' vybranych terminu).';
+				$changed   = true;
+			}
+		} else {
 
 		foreach ( $targets as $identifier => $target ) {
 			$field_path = $this->find_field_path_by_aliases(
@@ -1243,11 +1365,13 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			$details[] = 'Formular #' . $form_id . ': pole "' . $identifier . '" synchronizovano (' . count( $options ) . ' terminu).';
 			$changed   = true;
 		}
+		}
 
 		if ( ! $changed ) {
 			return [
 				'updated' => false,
 				'details' => $details,
+				'skipped' => false,
 			];
 		}
 
@@ -1277,6 +1401,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 			return [
 				'updated' => false,
 				'details' => $details,
+				'skipped' => false,
 			];
 		}
 
@@ -1287,6 +1412,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 		return [
 			'updated' => true,
 			'details' => $details,
+			'skipped' => false,
 		];
 	}
 
@@ -1296,9 +1422,10 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 * @param array<string, mixed> $config Configuration.
 	 * @return array<string, array<string, mixed>>
 	 */
-	private function get_targets_for_configuration( array $config ): array {
+	private function get_targets_for_configuration( array $config, array $selected_term_ids = [], bool $selected_only = false ): array {
 		$assignments = is_array( $config['assignments'] ?? null ) ? $config['assignments'] : [];
 		$targets     = [];
+		$selected_term_ids = array_values( array_unique( array_filter( array_map( 'intval', $selected_term_ids ) ) ) );
 
 		foreach ( self::SYNC_FIELDS as $identifier => $definition ) {
 			$term_type           = (string) $definition['term_type'];
@@ -1322,11 +1449,19 @@ class Hlavas_Terms_Fluent_Sync_Service {
 				continue;
 			}
 
+			$terms = $selected_only
+				? $this->get_selected_terms( $term_type, $include_all_for_type ? [] : $qualification_ids, $selected_term_ids )
+				: $this->get_export_terms( $term_type, $include_all_for_type ? [] : $qualification_ids );
+
+			if ( $selected_only && empty( $terms ) ) {
+				continue;
+			}
+
 			$targets[ $identifier ] = [
 				'identifier'         => $identifier,
 				'term_type'          => $term_type,
 				'qualification_ids'  => $include_all_for_type ? [] : array_values( array_unique( $qualification_ids ) ),
-				'terms'              => $this->get_syncable_terms( $term_type, $include_all_for_type ? [] : $qualification_ids ),
+				'terms'              => $terms,
 			];
 		}
 
@@ -1606,12 +1741,15 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 * @param array<string, mixed> $container Response or user_inputs container.
 	 * @return array{container: array<string, mixed>, changed: bool, legacy_detected: bool, converted: int}
 	 */
-	private function normalize_submission_container_to_modern( array $container ): array {
+	private function normalize_submission_container_to_modern( array $container, int $form_id = 0 ): array {
 		$changed         = false;
 		$legacy_detected = false;
 		$converted       = 0;
 
-		foreach ( self::LEGACY_FIELD_MAP as $modern_key => $candidate_keys ) {
+		foreach ( self::LEGACY_FIELD_MAP as $modern_key => $default_candidate_keys ) {
+			$candidate_keys = $form_id > 0
+				? $this->get_aliases_for_form( $form_id, $modern_key, (array) $default_candidate_keys )
+				: (array) $default_candidate_keys;
 			$existing_value = $container[ $modern_key ] ?? null;
 			$legacy_value   = null;
 
@@ -1704,9 +1842,11 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	 * @param object               $term Plugin term object.
 	 * @return array<string, mixed>
 	 */
-	private function apply_term_to_submission_container( array $container, object $term ): array {
+	private function apply_term_to_submission_container( array $container, object $term, int $form_id = 0 ): array {
 		$term_type   = 'zkouska' === (string) ( $term->term_type ?? '' ) ? 'termin_zkouska' : 'termin_kurz';
-		$field_names = self::LEGACY_FIELD_MAP[ $term_type ] ?? [ $term_type ];
+		$field_names = $form_id > 0
+			? $this->get_aliases_for_form( $form_id, $term_type, self::LEGACY_FIELD_MAP[ $term_type ] ?? [ $term_type ] )
+			: ( self::LEGACY_FIELD_MAP[ $term_type ] ?? [ $term_type ] );
 		$term_value  = 'label' === hlavas_terms_get_sync_value_mode()
 			? (string) ( $term->label ?? '' )
 			: (string) ( $term->term_key ?? '' );
@@ -1756,7 +1896,7 @@ class Hlavas_Terms_Fluent_Sync_Service {
 				continue;
 			}
 
-			$aliases = self::LEGACY_FIELD_MAP[ $modern_field ] ?? [ $modern_field ];
+			$aliases = $this->get_aliases_for_form( $form_id, $modern_field, self::LEGACY_FIELD_MAP[ $modern_field ] ?? [ $modern_field ] );
 
 			foreach ( $aliases as $field_name ) {
 				$existing_id = (int) $wpdb->get_var(
@@ -1871,29 +2011,152 @@ class Hlavas_Terms_Fluent_Sync_Service {
 	}
 
 	/**
-	 * Get syncable terms filtered optionally by qualification type IDs.
+	 * Get all exportable terms filtered optionally by qualification type IDs.
 	 *
-	 * @param string         $term_type Term type.
+	 * Full synchronization exports all plugin terms for the given scope,
+	 * including past, hidden and archived items.
+	 *
+	 * @param string          $term_type Term type.
 	 * @param array<int, int> $qualification_ids Qualification IDs.
 	 * @return array<int, object>
 	 */
-	private function get_syncable_terms( string $term_type, array $qualification_ids = [] ): array {
-		$terms = $this->repo->get_syncable( $term_type );
+	private function get_export_terms( string $term_type, array $qualification_ids = [] ): array {
+		$terms = $this->repo->get_all(
+			[
+				'term_type' => $term_type,
+				'orderby'   => 'sort_order',
+				'order'     => 'ASC',
+			]
+		);
 
-		if ( empty( $qualification_ids ) ) {
-			return $terms;
+		if ( ! empty( $qualification_ids ) ) {
+			$qualification_ids = array_values( array_filter( array_map( 'intval', $qualification_ids ) ) );
+
+			$terms = array_values(
+				array_filter(
+					$terms,
+					static function ( object $term ) use ( $qualification_ids ): bool {
+						return in_array( (int) ( $term->qualification_type_id ?? 0 ), $qualification_ids, true );
+					}
+				)
+			);
 		}
 
-		$qualification_ids = array_values( array_filter( array_map( 'intval', $qualification_ids ) ) );
+		usort(
+			$terms,
+			static function ( object $left, object $right ): int {
+				$sort_compare = (int) ( $left->sort_order ?? 0 ) <=> (int) ( $right->sort_order ?? 0 );
+
+				if ( 0 !== $sort_compare ) {
+					return $sort_compare;
+				}
+
+				return strcmp( (string) ( $left->date_start ?? '' ), (string) ( $right->date_start ?? '' ) );
+			}
+		);
+
+		return array_values( $terms );
+	}
+
+	/**
+	 * Get only selected terms for one target scope.
+	 *
+	 * @param string          $term_type Term type.
+	 * @param array<int, int> $qualification_ids Qualification IDs.
+	 * @param array<int, int> $selected_term_ids Selected term IDs.
+	 * @return array<int, object>
+	 */
+	private function get_selected_terms( string $term_type, array $qualification_ids, array $selected_term_ids ): array {
+		if ( empty( $selected_term_ids ) ) {
+			return [];
+		}
 
 		return array_values(
 			array_filter(
-				$terms,
-				static function ( object $term ) use ( $qualification_ids ): bool {
-					return in_array( (int) ( $term->qualification_type_id ?? 0 ), $qualification_ids, true );
+				$this->get_export_terms( $term_type, $qualification_ids ),
+				static function ( object $term ) use ( $selected_term_ids ): bool {
+					return in_array( (int) ( $term->id ?? 0 ), $selected_term_ids, true );
 				}
 			)
 		);
+	}
+
+	/**
+	 * Build one Fluent Forms option row for a plugin term.
+	 *
+	 * @param object $term Plugin term object.
+	 * @param string $value_mode term_key|label
+	 * @return array<string, mixed>
+	 */
+	private function build_term_option( object $term, string $value_mode ): array {
+		$value    = 'label' === $value_mode ? (string) $term->label : (string) $term->term_key;
+		$capacity = (int) $term->capacity;
+
+		return [
+			'label'      => (string) $term->label,
+			'value'      => $value,
+			'calc_value' => (string) $capacity,
+			'image'      => '',
+			'quantity'   => $capacity,
+		];
+	}
+
+	/**
+	 * Merge selected synchronized terms into existing form options.
+	 *
+	 * @param array<int, array<string, mixed>>  $existing_options Existing FF options.
+	 * @param array<int, object>                $terms Selected plugin terms.
+	 * @param array<int, array<string, mixed>>  $new_options New options for selected terms.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function merge_selected_term_options( array $existing_options, array $terms, array $new_options ): array {
+		foreach ( $terms as $index => $term ) {
+			$matched_index = $this->find_matching_option_index( $existing_options, $term );
+
+			if ( null === $matched_index ) {
+				$existing_options[] = $new_options[ $index ];
+				continue;
+			}
+
+			$existing_options[ $matched_index ] = array_merge(
+				is_array( $existing_options[ $matched_index ] ) ? $existing_options[ $matched_index ] : [],
+				$new_options[ $index ]
+			);
+		}
+
+		return array_values( $existing_options );
+	}
+
+	/**
+	 * Find the current option row that belongs to the given term.
+	 *
+	 * @param array<int, array<string, mixed>> $options Existing FF options.
+	 * @param object                           $term Plugin term object.
+	 * @return int|null
+	 */
+	private function find_matching_option_index( array $options, object $term ): ?int {
+		$candidates = array_filter(
+			[
+				trim( (string) ( $term->term_key ?? '' ) ),
+				trim( (string) ( $term->label ?? '' ) ),
+				trim( (string) ( $term->title ?? '' ) ),
+			]
+		);
+
+		foreach ( $options as $index => $option ) {
+			if ( ! is_array( $option ) ) {
+				continue;
+			}
+
+			$option_value = trim( (string) ( $option['value'] ?? '' ) );
+			$option_label = trim( (string) ( $option['label'] ?? '' ) );
+
+			if ( in_array( $option_value, $candidates, true ) || in_array( $option_label, $candidates, true ) ) {
+				return $index;
+			}
+		}
+
+		return null;
 	}
 
 	/**

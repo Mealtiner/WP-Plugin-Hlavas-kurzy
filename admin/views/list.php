@@ -51,20 +51,16 @@ if ( ! empty( $form_sync_timestamps ) ) {
 			?>
 		</h1>
 		<a href="<?php echo esc_url( admin_url( 'admin.php?page=hlavas-terms-edit' ) ); ?>" class="page-title-action">Přidat termín</a>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="hlavas-inline-header-form">
-			<?php wp_nonce_field( 'hlavas_sync', '_hlavas_sync_nonce' ); ?>
-			<input type="hidden" name="sync_form_id" value="0">
-			<input type="hidden" name="value_mode" value="<?php echo esc_attr( hlavas_terms_get_sync_value_mode() ); ?>">
+		<div class="hlavas-inline-header-form">
 			<button
-				type="submit"
-				name="hlavas_sync_execute"
-				value="1"
+				type="button"
+				id="hlavas-sync-selected-button"
 				class="page-title-action"
 				onclick="return confirm('Opravdu spustit FF synchronizaci pro všechny nakonfigurované formuláře?');"
 			>
 				FF synchronizace
 			</button>
-		</form>
+		</div>
 		<span class="hlavas-header-sync-info">
 			Poslední FF synchronizace:
 			<strong><?php echo '' !== $last_form_synced_at ? esc_html( $last_form_synced_at ) : 'Nikdy'; ?></strong>
@@ -160,12 +156,12 @@ if ( ! empty( $form_sync_timestamps ) ) {
 		</div>
 	<?php endif; ?>
 
-	<form method="post">
+	<form method="post" id="hlavas-terms-bulk-form">
 		<?php wp_nonce_field( 'hlavas_bulk', '_hlavas_bulk_nonce' ); ?>
 
 		<div class="tablenav top">
 			<div class="alignleft actions bulkactions">
-				<select name="bulk_action">
+				<select name="bulk_action" id="hlavas-bulk-action-select">
 					<option value="">Hromadné akce</option>
 					<option value="activate">Aktivovat</option>
 					<option value="deactivate">Deaktivovat</option>
@@ -303,3 +299,33 @@ if ( ! empty( $form_sync_timestamps ) ) {
 		</table>
 	</form>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+	const bulkForm = document.getElementById('hlavas-terms-bulk-form');
+	const syncButton = document.getElementById('hlavas-sync-selected-button');
+	const bulkActionSelect = document.getElementById('hlavas-bulk-action-select');
+
+	if (!bulkForm || !syncButton || !bulkActionSelect) {
+		return;
+	}
+
+	syncButton.removeAttribute('onclick');
+	syncButton.textContent = 'FF synchronizace vybraných';
+
+	syncButton.addEventListener('click', function() {
+		const checked = bulkForm.querySelectorAll('input[name="term_ids[]"]:checked');
+
+		if (!checked.length) {
+			window.alert('Nejprve zaškrtni alespoň jeden termín, který chceš synchronizovat.');
+			return;
+		}
+
+		if (!window.confirm('Opravdu synchronizovat jen zaškrtnuté termíny do navázaných Fluent Forms formulářů?')) {
+			return;
+		}
+
+		bulkActionSelect.value = 'sync';
+		bulkForm.submit();
+	});
+});
+</script>

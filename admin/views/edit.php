@@ -253,6 +253,11 @@ document.addEventListener('DOMContentLoaded', function() {
 		return option ? (option.dataset.accreditationCode || '').trim() : '';
 	}
 
+	function getAdminTitle() {
+		const titleInput = document.getElementById('title');
+		return titleInput ? titleInput.value.trim() : '';
+	}
+
 	function formatSingleDate(date) {
 		const day = date.getDate();
 		const month = date.getMonth() + 1;
@@ -276,6 +281,12 @@ document.addEventListener('DOMContentLoaded', function() {
 				: 'zkouška: ' + formattedDate;
 		}
 
+		const qualificationCode = getSelectedQualificationCode();
+		const adminTitle = getAdminTitle();
+		const coursePrefix = qualificationCode
+			? 'Kurz: Příprava na zkoušku ' + qualificationCode
+			: 'Kurz: ' + (adminTitle !== '' ? adminTitle : 'Kurz');
+
 		const dayS = startDate.getDate();
 		const monthS = startDate.getMonth() + 1;
 		const yearS = startDate.getFullYear();
@@ -285,13 +296,17 @@ document.addEventListener('DOMContentLoaded', function() {
 			const dayE = endDate.getDate();
 			const monthE = endDate.getMonth() + 1;
 			if (monthS === monthE && yearS === endDate.getFullYear()) {
-				return 'kurz: ' + dayS + '. - ' + dayE + '. ' + months[monthE] + ' ' + yearS;
+				return coursePrefix + ' (' + dayS + '. – ' + dayE + '. ' + months[monthE] + ' ' + yearS + ')';
 			}
 
-			return 'kurz: ' + dayS + '. ' + months[monthS] + ' - ' + dayE + '. ' + months[monthE] + ' ' + yearS;
+			if (yearS === endDate.getFullYear()) {
+				return coursePrefix + ' (' + dayS + '. ' + months[monthS] + ' – ' + dayE + '. ' + months[monthE] + ' ' + yearS + ')';
+			}
+
+			return coursePrefix + ' (' + dayS + '. ' + months[monthS] + ' ' + yearS + ' – ' + dayE + '. ' + months[monthE] + ' ' + endDate.getFullYear() + ')';
 		}
 
-		return 'kurz: ' + dayS + '. ' + months[monthS] + ' ' + yearS;
+		return coursePrefix + ' (' + dayS + '. ' + months[monthS] + ' ' + yearS + ')';
 	}
 
 	function syncQualificationOptions() {
@@ -323,7 +338,7 @@ document.addEventListener('DOMContentLoaded', function() {
 		const labelInput = document.getElementById('label');
 		labelInput.placeholder = document.getElementById('term_type').value === 'zkouska'
 			? 'např. Zkouška z profesní kvalifikace 75-008-N (22. dubna 2026)'
-			: 'např. kurz: 17. - 19. dubna 2026';
+			: 'např. Kurz: Příprava na zkoušku 75-008-N (17. – 19. dubna 2026)';
 	}
 
 	function autoFillGeneratedLabelIfEmpty() {
@@ -365,6 +380,7 @@ document.addEventListener('DOMContentLoaded', function() {
 	document.getElementById('qualification_type_id').addEventListener('change', autoFillGeneratedLabelIfEmpty);
 	document.getElementById('date_start').addEventListener('change', autoFillGeneratedLabelIfEmpty);
 	document.getElementById('date_end').addEventListener('change', autoFillGeneratedLabelIfEmpty);
+	document.getElementById('title').addEventListener('input', autoFillGeneratedLabelIfEmpty);
 
 	syncQualificationOptions();
 	syncLabelPlaceholder();
